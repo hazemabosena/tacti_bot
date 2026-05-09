@@ -2,8 +2,6 @@
 node_modules/
 .DS_Store
 npm-debug.log
-.wwebjs_auth/
-.wwebjs_cache/
 tmp_labels.png
 test_player_card.png
 clan_mission_test.png
