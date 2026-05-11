@@ -1,15 +1,15 @@
 {
   "name": "tactiobot",
   "version": "1.0.0",
-  "main": "new generate/index.js",
+  "main": "./new generate/index.js",
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "start": "node \"new generate/index.js\"",
-    "start:discord": "node \"new generate/index.js\"",
-    "fetch-font": "node \"new generate/downloadFont.js\"",
-    "register-commands": "node \"new generate/deploy-commands.js\"",
+    "start": "node './new generate/index.js'",
+    "start:discord": "node './new generate/index.js'",
+    "fetch-font": "node './new generate/downloadFont.js'",
+    "register-commands": "node './new generate/deploy-commands.js'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
