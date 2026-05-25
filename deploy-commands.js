@@ -4,6 +4,7 @@ const path = require('path');
 require('dotenv').config();
 
 const commands = [];
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
 let commandFiles = [];
 try {
   const commandsDir = path.resolve(__dirname, 'commands');
@@ -34,12 +35,12 @@ for (const file of commandFiles) {
   }
 }
 
-const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
 (async () => {
   try {
     console.log('Started refreshing application (/) commands.');
-    if (!process.env.TOKEN || !process.env.CLIENT_ID) {
+    if (!DISCORD_TOKEN || !process.env.CLIENT_ID) {
       throw new Error('Missing TOKEN or CLIENT_ID in environment');
     }
 

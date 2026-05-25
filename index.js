@@ -4,6 +4,10 @@ const path = require("path");
 const http = require("http");
 require("dotenv").config();
 
+// Accept either TOKEN or DISCORD_TOKEN so different hosts can use their
+// preferred environment variable name.
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
 });
@@ -96,9 +100,9 @@ try {
 
 // Startup environment diagnostics (masked token, presence of CLIENT_ID)
 try {
-  const hasToken = !!process.env.TOKEN;
+  const hasToken = !!DISCORD_TOKEN;
   const hasClientId = !!process.env.CLIENT_ID;
-  const masked = hasToken ? (`***${String(process.env.TOKEN).slice(-6)}`) : 'NONE';
+  const masked = hasToken ? (`***${String(DISCORD_TOKEN).slice(-6)}`) : 'NONE';
   console.log('env: TOKEN present?', hasToken, 'masked_suffix:', masked, 'CLIENT_ID present?', hasClientId);
   console.log('Loaded command files count:', client.commands.size);
 } catch (e) {
@@ -108,7 +112,7 @@ try {
 // Auto-register commands with Discord on startup (helps when deploying to Railway)
 async function registerCommands() {
   try {
-    if (!process.env.TOKEN || !process.env.CLIENT_ID) {
+    if (!DISCORD_TOKEN || !process.env.CLIENT_ID) {
       console.log('Skipping auto-registration: missing TOKEN or CLIENT_ID');
       return;
     }
@@ -149,7 +153,7 @@ async function registerCommands() {
     }
 
     const { REST, Routes } = require('discord.js');
-    const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+    const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
 
     console.log('Registering commands with Discord...');
     console.log('Commands to register:', commandNames);
@@ -218,7 +222,6 @@ client.once("clientReady", async () => {
 
 // --- Railway / PaaS helpers ---
 // Ensure DISCORD_TOKEN (or TOKEN) is set via environment (Railway provides project variables)
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
 if (!DISCORD_TOKEN) {
   console.error('❌ Missing DISCORD_TOKEN in environment. Set DISCORD_TOKEN in Railway secrets or in your .env (do NOT commit it).');
   process.exit(1);
@@ -333,4 +336,4 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-client.login(process.env.TOKEN);
+client.login(DISCORD_TOKEN);

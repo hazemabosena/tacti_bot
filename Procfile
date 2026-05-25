@@ -1,1 +1,1 @@
-web: node new\ generate/downloadFont.js && npm start
+web: npm start
