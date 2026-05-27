@@ -6,6 +6,7 @@
     "node": ">=18"
   },
   "scripts": {
+    "prestart": "node scripts/verify-discord-install.js",
     "start": "node index.js",
     "start:discord": "node index.js",
     "fetch-font": "node downloadFont.js",
@@ -16,7 +17,7 @@
     "axios": "^1.13.6",
     "canvas": "^3.2.2",
     "cheerio": "^1.2.0",
-    "discord.js": "^14.22.1",
+    "discord.js": "14.25.1",
     "dotenv": "^17.2.2"
   }
 }
