@@ -294,7 +294,7 @@ module.exports = async function generateMissionImage(missions = []) {
   // Compute canvas height dynamically based on all slots
   let estimatedHeight = 140; // header space
   for (const mission of allSlots) {
-    const isSkip = !mission || String(mission.name).trim().toLowerCase() === 'skip';
+    const isSkip = !mission || String(mission.originalName || mission.name).trim().toLowerCase() === 'skip';
     const operatorCount = isSkip ? 0 : (Array.isArray(mission.operators) ? mission.operators.length : 0);
     const rowsNeeded = Math.max(1, Math.ceil(operatorCount / opsPerRow));
     const missionCardHeight = isSkip ? 120 : (140 + (rowsNeeded * rowHeight));
@@ -392,7 +392,7 @@ module.exports = async function generateMissionImage(missions = []) {
 
     // Mission title
     // Draw sequential slot label for selected missions (M1..Mn), auto-fit inside card width.
-    const missionText = String(mission.name || '').trim();
+    const missionText = String(mission.displayName || mission.name || '').trim();
     const slotLabel = `M${slotIndex + 1} - ${missionText}`;
     let missionTitlePx = 28;
     const missionMaxW = cardWidth - (cardPadding * 2);
@@ -411,18 +411,18 @@ module.exports = async function generateMissionImage(missions = []) {
     ctx.stroke();
 
     // Skipped or empty states
-    const isSkip = String(mission.name || '').trim().toLowerCase() === 'skip';
+    const isSkip = String(mission.originalName || mission.name || '').trim().toLowerCase() === 'skip';
     const hasOps = Array.isArray(mission.operators) && mission.operators.length > 0;
 
     if (isSkip) {
       // Keep SKIPPED centered inside the skip card.
-      drawTextSafe(ctx, 'SKIPPED', cardX + cardWidth / 2, cardY + Math.floor(cardHeight / 2), { px: 24, weight: 'bold', color: '#FF6B6B', align: 'center', baseline: 'middle' });
+      drawTextSafe(ctx, mission.skippedLabel || 'SKIPPED', cardX + cardWidth / 2, cardY + Math.floor(cardHeight / 2), { px: 24, weight: 'bold', color: '#FF6B6B', align: 'center', baseline: 'middle' });
       y = cardY + cardHeight + 30;
       continue;
     }
 
     if (!hasOps) {
-      drawTextSafe(ctx, 'No Operators', cardX + cardWidth / 2, cardY + Math.max(100, cardHeight / 2), { px: 22, weight: 'bold', color: '#BBBBBB', align: 'center', baseline: 'middle' });
+      drawTextSafe(ctx, mission.noOperatorsLabel || 'No Operators', cardX + cardWidth / 2, cardY + Math.max(100, cardHeight / 2), { px: 22, weight: 'bold', color: '#BBBBBB', align: 'center', baseline: 'middle' });
       y = cardY + cardHeight + 30;
       continue;
     }
@@ -444,7 +444,8 @@ module.exports = async function generateMissionImage(missions = []) {
       ctx.stroke();
 
       // Attempt to find and draw image; otherwise draw placeholder
-      const foundPath = findOperatorImage(op.name);
+      const imageName = op.imageName || op.originalName || op.name;
+      const foundPath = findOperatorImage(imageName);
       if (foundPath) {
         try {
           const img = await loadImage(foundPath);
@@ -482,7 +483,7 @@ module.exports = async function generateMissionImage(missions = []) {
       ctx.fill();
 
       ctx.fillStyle = '#FFFFFF';
-      const opNameText = String(op.name || '').trim();
+      const opNameText = String(op.displayName || op.name || '').trim();
       const opNameMaxW = labelW - (labelPaddingX * 2);
       // One-line names, auto-shrink a little so long names stay whole.
       let opNamePx = 14;

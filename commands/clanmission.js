@@ -2,6 +2,13 @@ const { SlashCommandBuilder } = require("discord.js");
 const { AttachmentBuilder } = require("discord.js");
 const generateMissionImage = require("../image/generateMissionImage.js");
 const { missionData } = require("../missionData.js");
+const {
+  languages,
+  normalizeLanguage,
+  translateMission,
+  translateOperator,
+  translateUi
+} = require("../translations.js");
 
 const missionChoices = [
   { name: "Skip", value: "Skip" },
@@ -80,6 +87,11 @@ module.exports = {
     .setName("clanmission")
     .setDescription("Pick missions and get best operators placement for your clan")
     .addStringOption(option => {
+      option.setName("language").setDescription("Output language").setRequired(true);
+      languages.forEach(choice => option.addChoices(choice));
+      return option;
+    })
+    .addStringOption(option => {
       option.setName("m1").setDescription("Mission 1").setRequired(false);
       missionChoices.forEach(choice => option.addChoices(choice));
       return option;
@@ -131,7 +143,8 @@ module.exports = {
       useDeferReply = false;
     }
 
-    // NOW get missions and process
+    // NOW get language, missions, and process
+    const language = normalizeLanguage(interaction.options.getString("language"));
     const missions = [];
     for (let i = 1; i <= 8; i++) {
       const m = interaction.options.getString(`m${i}`);
@@ -142,7 +155,11 @@ module.exports = {
     const nonSkip = missions.filter(m => m && m.toLowerCase() !== "skip");
     if (nonSkip.length === 0) {
       try {
-        return await interaction.followUp("❌ You must pick at least one mission.");
+        const message = translateUi("mustPickMission", language);
+        if (useDeferReply) {
+          return await interaction.editReply(message);
+        }
+        return await interaction.followUp(message);
       } catch (err) {
         console.error('Could not send error message:', err && err.message);
       }
@@ -153,9 +170,12 @@ module.exports = {
     const results = assignBestOperators(missions);
 
     // Build textual reply, preserving skipped slots in output order
-    let reply = "**Best operator placement for your clan:**\n\n";
+    let reply = `**${translateUi("title", language)}**\n\n`;
     missions.forEach((m, i) => {
-      const header = `M${i + 1} - ${m && m.toLowerCase() !== 'skip' ? m : '(skipped)'}`;
+      const missionLabel = m && m.toLowerCase() !== 'skip'
+        ? translateMission(m, language)
+        : `(${translateUi("skipped", language)})`;
+      const header = `M${i + 1} - ${missionLabel}`;
       if (!m || m.toLowerCase() === 'skip') {
         // Skipped mission: just show header
         reply += `${header}\n\n`;
@@ -164,12 +184,12 @@ module.exports = {
 
       const opsList = results[m] && results[m].length ? results[m] : [];
       if (opsList.length === 0) {
-        reply += `${header}\n- No operators\n\n`;
+        reply += `${header}\n- ${translateUi("noOperators", language)}\n\n`;
         return;
       }
 
       // Compact inline list, no numbers
-      const names = opsList.map(o => o.op).join(' , ');
+      const names = opsList.map(o => translateOperator(o.op, language)).join(' , ');
       reply += `${header}\n- ${names}\n\n`;
     });
 
@@ -178,12 +198,24 @@ module.exports = {
       // Use SAME operators as shown in message (from results)
       const missionObjects = missions.map(m => {
         if (!m || m.toLowerCase() === "skip") {
-          return { name: "Skip", operators: [] };
+          return {
+            name: translateMission("Skip", language),
+            originalName: "Skip",
+            skippedLabel: translateUi("skipped", language).toUpperCase(),
+            operators: []
+          };
         }
         const missionOps = results[m] || [];
         return {
-          name: m,
-          operators: missionOps.map(o => ({ name: o.op, value: o.value }))
+          name: translateMission(m, language),
+          originalName: m,
+          noOperatorsLabel: translateUi("noOperators", language),
+          operators: missionOps.map(o => ({
+            name: o.op,
+            originalName: o.op,
+            displayName: translateOperator(o.op, language),
+            value: o.value
+          }))
         };
       });
 
