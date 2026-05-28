@@ -1,7 +1,7 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { AttachmentBuilder } = require("discord.js");
 const generateMissionImage = require("../image/generateMissionImage.js");
-const { missionData } = require("../missionData.js");
+const { missionData } = require("../missionDataActive.js");
 const {
   languages,
   normalizeLanguage,

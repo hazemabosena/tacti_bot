@@ -6,10 +6,12 @@ const raw = {
   charon: "charon.png.jpeg",
   chen_li: "chen_li.png.jpeg",
   chenli: "chen_li.png.jpeg", // alternate key for "Chen li"
+  craig: "craig.png.jpeg",
   david: "david.png.jpeg",
   diana: "diana.png.jpeg",
   dmitry: "dmitry.png.jpeg",
   dutch: "dutch.png.jpeg",
+  ferry: "ferry.png.jpeg",
   hawk: "hawk.png.jpeg",
   jason: "jason.png.jpeg",
   joe: "joe.png.jpeg",

@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { missionData } = require("../missionData.js");
+const { missionData } = require("../missionDataActive.js");
 
 const missionChoices = [
   { name: "Breach", value: "Breach" },
