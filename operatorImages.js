@@ -28,6 +28,7 @@ const raw = {
   owen: "owen.png.jpeg",
   phoenix: "phoenix.png.jpeg",
   ray: "ray.png.jpeg",
+  rey: "ray.png.jpeg", // alternate key for "Rey"
   rick: "rick.png.jpeg",
   rookie: "rookie.png.jpeg",
   snek: "snek.png.jpeg",
