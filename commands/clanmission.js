@@ -30,6 +30,51 @@ const missionChoices = [
   { name: "Uncommon Only", value: "Uncommon Only" }
 ];
 
+function addMissionOption(command, optionName, description) {
+  return command.addStringOption(option =>
+    option
+      .setName(optionName)
+      .setDescription(description)
+      .setRequired(false)
+      .setAutocomplete(true)
+  );
+}
+
+function getLocalizedMissionChoices(language, focusedValue = "") {
+  const query = String(focusedValue || "").trim().toLowerCase();
+  const localizedChoices = missionChoices.map(choice => ({
+    name: translateMission(choice.value, language),
+    value: choice.value,
+    englishName: choice.name
+  }));
+
+  const filtered = query
+    ? localizedChoices.filter(choice =>
+        choice.name.toLowerCase().includes(query) ||
+        choice.englishName.toLowerCase().includes(query)
+      )
+    : localizedChoices;
+
+  return filtered.slice(0, 25).map(({ name, value }) => ({ name, value }));
+}
+
+function createClanMissionCommand() {
+  let command = new SlashCommandBuilder()
+    .setName("clanmission")
+    .setDescription("Pick missions and get best operators placement for your clan")
+    .addStringOption(option => {
+      option.setName("language").setDescription("Output language").setRequired(true);
+      languages.forEach(choice => option.addChoices(choice));
+      return option;
+    });
+
+  for (let i = 1; i <= 8; i++) {
+    command = addMissionOption(command, `m${i}`, `Mission ${i}`);
+  }
+
+  return command;
+}
+
 // Assign operators with special rules:
 // - If an operator has the SAME value across all selected (non-skip) missions, place them ONLY in the LAST selected mission
 // - Otherwise, place them in the mission where they have the highest value
@@ -83,54 +128,17 @@ function assignBestOperators(missions) {
 }
 
 module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("clanmission")
-    .setDescription("Pick missions and get best operators placement for your clan")
-    .addStringOption(option => {
-      option.setName("language").setDescription("Output language").setRequired(true);
-      languages.forEach(choice => option.addChoices(choice));
-      return option;
-    })
-    .addStringOption(option => {
-      option.setName("m1").setDescription("Mission 1").setRequired(false);
-      missionChoices.forEach(choice => option.addChoices(choice));
-      return option;
-    })
-    .addStringOption(option => {
-      option.setName("m2").setDescription("Mission 2").setRequired(false);
-      missionChoices.forEach(choice => option.addChoices(choice));
-      return option;
-    })
-    .addStringOption(option => {
-      option.setName("m3").setDescription("Mission 3").setRequired(false);
-      missionChoices.forEach(choice => option.addChoices(choice));
-      return option;
-    })
-    .addStringOption(option => {
-      option.setName("m4").setDescription("Mission 4").setRequired(false);
-      missionChoices.forEach(choice => option.addChoices(choice));
-      return option;
-    })
-    .addStringOption(option => {
-      option.setName("m5").setDescription("Mission 5").setRequired(false);
-      missionChoices.forEach(choice => option.addChoices(choice));
-      return option;
-    })
-    .addStringOption(option => {
-      option.setName("m6").setDescription("Mission 6").setRequired(false);
-      missionChoices.forEach(choice => option.addChoices(choice));
-      return option;
-    })
-    .addStringOption(option => {
-      option.setName("m7").setDescription("Mission 7").setRequired(false);
-      missionChoices.forEach(choice => option.addChoices(choice));
-      return option;
-    })
-    .addStringOption(option => {
-      option.setName("m8").setDescription("Mission 8").setRequired(false);
-      missionChoices.forEach(choice => option.addChoices(choice));
-      return option;
-    }),
+  data: createClanMissionCommand(),
+
+  async autocomplete(interaction) {
+    const focused = interaction.options.getFocused(true);
+    if (!/^m[1-8]$/.test(focused.name)) {
+      return interaction.respond([]);
+    }
+
+    const language = normalizeLanguage(interaction.options.getString("language"));
+    return interaction.respond(getLocalizedMissionChoices(language, focused.value));
+  },
 
   async execute(interaction) {
     // DEFER FIRST, before any processing — this gives us 15 minutes instead of 3 seconds

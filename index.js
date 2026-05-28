@@ -306,6 +306,23 @@ process.on('beforeExit', (code) => console.log(`🧾 beforeExit with code ${code
 process.on('exit', (code) => console.log(`🔚 Process exiting with code ${code} PID:${process.pid}`));
 
 client.on("interactionCreate", async (interaction) => {
+  if (interaction.isAutocomplete()) {
+    const command = client.commands.get(interaction.commandName);
+    if (!command || typeof command.autocomplete !== "function") return;
+
+    try {
+      await command.autocomplete(interaction);
+    } catch (error) {
+      console.error("Autocomplete error:", error);
+      try {
+        await interaction.respond([]);
+      } catch (respondErr) {
+        console.error("Failed to send autocomplete response:", respondErr);
+      }
+    }
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
 
   const command = client.commands.get(interaction.commandName);
