@@ -30,6 +30,11 @@ const missionChoices = [
   { name: "Uncommon Only", value: "Uncommon Only" }
 ];
 
+const placementModes = [
+  { name: "Default Mode", value: "default" },
+  { name: "Smart Balance Mode", value: "smart_balance" }
+];
+
 function addMissionOption(command, optionName, description) {
   return command.addStringOption(option =>
     option
@@ -68,6 +73,11 @@ function createClanMissionCommand() {
     .addStringOption(option => {
       option.setName("language").setDescription("Output language").setRequired(true);
       languages.forEach(choice => option.addChoices(choice));
+      return option;
+    })
+    .addStringOption(option => {
+      option.setName("mode").setDescription("Placement mode").setRequired(true);
+      placementModes.forEach(choice => option.addChoices(choice));
       return option;
     });
 
@@ -130,6 +140,100 @@ function assignBestOperators(missions) {
   return results;
 }
 
+function getSelectedSlots(missions) {
+  return missions
+    .map((mission, slotIndex) => ({ mission, slotIndex }))
+    .filter(item => item.mission && item.mission.toLowerCase() !== "skip");
+}
+
+function getAllOperatorNames() {
+  const operators = new Set();
+  for (const ops of Object.values(missionData)) {
+    for (const op of Object.keys(ops || {})) operators.add(op);
+  }
+  return Array.from(operators).sort((a, b) => a.localeCompare(b));
+}
+
+function calculateSmartQuotas(selectedSlots, operatorCount) {
+  const totalWeight = selectedSlots.reduce((sum, _slot, index) => sum + index + 1, 0);
+  const quotas = selectedSlots.map((_slot, index) => {
+    const weight = index + 1;
+    const exact = (weight / totalWeight) * operatorCount;
+    return {
+      count: Math.round(exact),
+      remainder: exact - Math.floor(exact)
+    };
+  });
+
+  let used = quotas.reduce((sum, quota) => sum + quota.count, 0);
+  const addOrder = quotas
+    .map((quota, index) => ({ index, remainder: quota.remainder }))
+    .sort((a, b) => (b.remainder - a.remainder) || (b.index - a.index));
+
+  for (let i = 0; used < operatorCount; i++, used++) {
+    quotas[addOrder[i % addOrder.length].index].count++;
+  }
+
+  for (let i = quotas.length - 1; used > operatorCount && i >= 0;) {
+    if (quotas[i].count > 0) {
+      quotas[i].count--;
+      used--;
+    }
+    i = i === 0 ? quotas.length - 1 : i - 1;
+  }
+
+  return quotas.map(quota => quota.count);
+}
+
+function assignSmartBalanceOperators(missions) {
+  const selectedSlots = getSelectedSlots(missions);
+  const results = missions.map(() => []);
+  if (selectedSlots.length === 0) return results;
+
+  const operators = getAllOperatorNames();
+  const quotas = calculateSmartQuotas(selectedSlots, operators.length);
+  const remaining = quotas.slice();
+
+  const operatorProfiles = operators.map(op => {
+    const scores = selectedSlots.map((slot, selectedIndex) => ({
+      selectedIndex,
+      slotIndex: slot.slotIndex,
+      mission: slot.mission,
+      value: (missionData[slot.mission] && missionData[slot.mission][op]) || 0
+    }));
+    const bestValue = scores.reduce((max, score) => Math.max(max, score.value), 0);
+    return { op, bestValue, scores };
+  });
+
+  operatorProfiles.sort((a, b) => (b.bestValue - a.bestValue) || a.op.localeCompare(b.op));
+
+  for (const profile of operatorProfiles) {
+    const rankedScores = profile.scores
+      .slice()
+      .sort((a, b) =>
+        (b.value - a.value) ||
+        (b.selectedIndex - a.selectedIndex) ||
+        a.mission.localeCompare(b.mission)
+      );
+
+    let target = rankedScores.find(score => remaining[score.selectedIndex] > 0);
+    if (!target) {
+      target = rankedScores[rankedScores.length - 1];
+    }
+
+    if (target) {
+      results[target.slotIndex].push({ op: profile.op, value: target.value });
+      remaining[target.selectedIndex] = Math.max(0, remaining[target.selectedIndex] - 1);
+    }
+  }
+
+  for (const ops of results) {
+    ops.sort((a, b) => (b.value - a.value) || a.op.localeCompare(b.op));
+  }
+
+  return results;
+}
+
 module.exports = {
   data: createClanMissionCommand(),
 
@@ -156,6 +260,7 @@ module.exports = {
 
     // NOW get language, missions, and process
     const language = normalizeLanguage(interaction.options.getString("language"));
+    const placementMode = interaction.options.getString("mode") || "default";
     const missions = [];
     for (let i = 1; i <= 8; i++) {
       const m = interaction.options.getString(`m${i}`);
@@ -177,8 +282,11 @@ module.exports = {
       return;
     }
 
-    // Assign best operators (pass full missions so assignment respects all slots)
-    const results = assignBestOperators(missions);
+    // Assign operators using the selected placement mode.
+    const smartResults = placementMode === "smart_balance"
+      ? assignSmartBalanceOperators(missions)
+      : null;
+    const results = smartResults || assignBestOperators(missions);
 
     // Build textual reply, preserving skipped slots in output order
     let reply = `**${translateUi("title", language)}**\n\n`;
@@ -193,7 +301,9 @@ module.exports = {
         return;
       }
 
-      const opsList = results[m] && results[m].length ? results[m] : [];
+      const opsList = smartResults
+        ? (smartResults[i] || [])
+        : (results[m] && results[m].length ? results[m] : []);
       if (opsList.length === 0) {
         reply += `${header}\n- ${translateUi("noOperators", language)}\n\n`;
         return;
@@ -207,7 +317,7 @@ module.exports = {
     try {
       // Build mission objects for the image — ALWAYS 8 slots (skipped slots kept)
       // Use SAME operators as shown in message (from results)
-      const missionObjects = missions.map(m => {
+      const missionObjects = missions.map((m, index) => {
         if (!m || m.toLowerCase() === "skip") {
           return {
             name: translateMission("Skip", language),
@@ -216,7 +326,7 @@ module.exports = {
             operators: []
           };
         }
-        const missionOps = results[m] || [];
+        const missionOps = smartResults ? (smartResults[index] || []) : (results[m] || []);
         return {
           name: translateMission(m, language),
           originalName: m,
@@ -273,4 +383,9 @@ module.exports = {
       }
     }
   },
+  _internal: {
+    assignBestOperators,
+    assignSmartBalanceOperators,
+    calculateSmartQuotas
+  }
 };
