@@ -74,16 +74,18 @@ function createClanMissionCommand() {
       option.setName("language").setDescription("Output language").setRequired(true);
       languages.forEach(choice => option.addChoices(choice));
       return option;
-    })
-    .addStringOption(option => {
-      option.setName("mode").setDescription("Placement mode").setRequired(true);
-      placementModes.forEach(choice => option.addChoices(choice));
-      return option;
     });
 
   for (let i = 1; i <= 8; i++) {
     command = addMissionOption(command, `m${i}`, `Mission ${i}`);
   }
+
+  // Mode option added AFTER missions and is NOT required
+  command.addStringOption(option => {
+    option.setName("mode").setDescription("Placement mode (optional, default: Default Mode)").setRequired(false);
+    placementModes.forEach(choice => option.addChoices(choice));
+    return option;
+  });
 
   return command;
 }

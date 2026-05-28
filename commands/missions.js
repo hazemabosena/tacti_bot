@@ -67,19 +67,16 @@ module.exports = {
 
   /**
    * Calculates the optimal operator placement for a cycle of missions
+   * Returns ALL operators from missionDataActive.js sorted by optimization priority
    * Prioritizes operators with maximum stars (orange cells) for exactly one mission
    * @param {Array<string>} missions - Array of mission names in order
-   * @param {Object} operatorsPerMission - Number of operators needed per mission index
-   * @returns {Object} - Assignment of operators to missions
+   * @returns {Object} - All operators sorted by optimization priority
    */
-  optimizeMissionPlacement(missions, operatorsPerMission = {}) {
-    // Default operators per mission: 1, 1, 1, 2, 2, 3, 3, 4
-    const defaultOpsPerMission = [1, 1, 1, 2, 2, 3, 3, 4];
-    const opsNeeded = operatorsPerMission || {};
-    
+  optimizeMissionPlacement(missions) {
     // Find max value for each mission and track which operators have it
     const missionMaxes = {};
     const operatorMaxMissions = {}; // Track which missions each operator has a max in
+    const allOperatorsSet = new Set();
     
     missions.forEach((mission, idx) => {
       if (!missionData[mission]) return;
@@ -93,72 +90,72 @@ module.exports = {
           .map(([op, _]) => op)
       };
       
-      // Track which missions each operator has max in
+      // Track which missions each operator has max in and collect all operators
       missionMaxes[idx].operatorsWithMax.forEach(op => {
         if (!operatorMaxMissions[op]) {
           operatorMaxMissions[op] = [];
         }
         operatorMaxMissions[op].push(idx);
       });
+
+      // Collect all operators from this mission
+      Object.keys(missionOps).forEach(op => allOperatorsSet.add(op));
     });
 
     const assignments = {};
+    missions.forEach((mission, idx) => {
+      assignments[idx] = [];
+    });
+
     const used = new Set();
+    const allOperators = Array.from(allOperatorsSet);
 
     // Phase 1: Assign operators who have orange (max) for ONLY ONE mission in this cycle
     missions.forEach((mission, idx) => {
-      const slotsNeeded = opsNeeded[idx] || defaultOpsPerMission[idx] || 4;
-      assignments[idx] = [];
-
-      // Get operators with max for this mission who only have max for this mission
       const exclusiveMaxOps = missionMaxes[idx].operatorsWithMax
-        .filter(op => operatorMaxMissions[op].length === 1 && !used.has(op));
+        .filter(op => operatorMaxMissions[op].length === 1 && !used.has(op))
+        .sort((a, b) => {
+          const valA = missionData[mission][a];
+          const valB = missionData[mission][b];
+          return valB - valA; // Sort by value descending
+        });
 
-      exclusiveMaxOps.slice(0, slotsNeeded).forEach(op => {
+      exclusiveMaxOps.forEach(op => {
         assignments[idx].push(op);
         used.add(op);
       });
     });
 
-    // Phase 2: Fill remaining slots with operators who have max for this mission
+    // Phase 2: Assign operators who have max for this mission (but max for other missions too)
     missions.forEach((mission, idx) => {
-      const slotsNeeded = opsNeeded[idx] || defaultOpsPerMission[idx] || 4;
-      const slotsRemaining = slotsNeeded - assignments[idx].length;
-
-      if (slotsRemaining > 0) {
-        const availableMaxOps = missionMaxes[idx].operatorsWithMax
-          .filter(op => !used.has(op))
-          .sort((a, b) => {
-            // Sort by: fewer max missions first, then by value descending
-            const aMaxCount = operatorMaxMissions[a]?.length || 0;
-            const bMaxCount = operatorMaxMissions[b]?.length || 0;
-            if (aMaxCount !== bMaxCount) return aMaxCount - bMaxCount;
-            return missionData[mission][b] - missionData[mission][a];
-          });
-
-        availableMaxOps.slice(0, slotsRemaining).forEach(op => {
-          assignments[idx].push(op);
-          used.add(op);
+      const multiMaxOps = missionMaxes[idx].operatorsWithMax
+        .filter(op => operatorMaxMissions[op].length > 1 && !used.has(op))
+        .sort((a, b) => {
+          const valA = missionData[mission][a];
+          const valB = missionData[mission][b];
+          return valB - valA; // Sort by value descending
         });
-      }
+
+      multiMaxOps.forEach(op => {
+        assignments[idx].push(op);
+        used.add(op);
+      });
     });
 
-    // Phase 3: Fill any remaining slots with top performers not yet used
+    // Phase 3: Add remaining operators sorted by value for this mission
     missions.forEach((mission, idx) => {
-      const slotsNeeded = opsNeeded[idx] || defaultOpsPerMission[idx] || 4;
-      const slotsRemaining = slotsNeeded - assignments[idx].length;
-
-      if (slotsRemaining > 0) {
-        const allOps = Object.entries(missionData[mission] || {})
-          .sort((a, b) => b[1] - a[1])
-          .filter(([op, _]) => !used.has(op))
-          .map(([op, _]) => op);
-
-        allOps.slice(0, slotsRemaining).forEach(op => {
-          assignments[idx].push(op);
-          used.add(op);
+      const remaining = allOperators
+        .filter(op => !used.has(op) && missionData[mission][op])
+        .sort((a, b) => {
+          const valA = missionData[mission][a];
+          const valB = missionData[mission][b];
+          return valB - valA; // Sort by value descending
         });
-      }
+
+      remaining.forEach(op => {
+        assignments[idx].push(op);
+        used.add(op);
+      });
     });
 
     return assignments;
@@ -174,13 +171,17 @@ module.exports = {
       return interaction.reply("❌ You must pick at least one mission.");
     }
 
-    // Get optimized assignments
+    // Get optimized assignments with ALL operators
     const assignments = this.optimizeMissionPlacement(missions);
 
-    let reply = "**🎯 Optimized Mission Placement:**\n\n";
+    let reply = "**🎯 Optimized Mission Placement (All Operators):**\n\n";
     missions.forEach((mission, i) => {
       const selected = assignments[i] || [];
-      reply += `**M${i + 1} - ${mission}:** (${selected.length} ops)\n${selected.join(", ")}\n\n`;
+      if (selected.length > 0) {
+        reply += `**M${i + 1} - ${mission}:**\n${selected.join(" , ")}\n\n`;
+      } else {
+        reply += `**M${i + 1} - ${mission}:** (no operators)\n\n`;
+      }
     });
 
     await interaction.reply(reply);
