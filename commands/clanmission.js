@@ -55,7 +55,10 @@ function getLocalizedMissionChoices(language, focusedValue = "") {
       )
     : localizedChoices;
 
-  return filtered.slice(0, 25).map(({ name, value }) => ({ name, value }));
+  return filtered.slice(0, 25).map(({ name, value, englishName }) => ({
+    name: name === englishName ? name : `${name} (${englishName})`,
+    value
+  }));
 }
 
 function createClanMissionCommand() {
