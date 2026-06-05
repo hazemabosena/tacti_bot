@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tacticool Live Data Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%);
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            animation: slideDown 0.6s ease-out;
+        }
+
+        header h1 {
+            font-size: 3em;
+            color: #00ff00;
+            text-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+            margin-bottom: 10px;
+            font-weight: 900;
+        }
+
+        header p {
+            color: #888;
+            font-size: 1.1em;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: linear-gradient(135deg, #1e1e2e 0%, #2a2a3e 100%);
+            border: 2px solid #333;
+            border-radius: 12px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        .card:hover {
+            border-color: #00ff00;
+            box-shadow: 0 0 25px rgba(0, 255, 0, 0.2), inset 0 0 15px rgba(0, 255, 0, 0.05);
+            transform: translateY(-5px);
+        }
+
+        .card-icon {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+        }
+
+        .card-title {
+            color: #00ff00;
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+
+        .card-value {
+            background: #0a0a0a;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #00ff00;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95em;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            color: #00ff00;
+        }
+
+        .loading {
+            color: #888;
+            font-style: italic;
+        }
+
+        .error {
+            color: #ff4444;
+            background: rgba(255, 68, 68, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 4px solid #ff4444;
+        }
+
+        .success {
+            color: #44ff44;
+        }
+
+        .list-item {
+            background: #0a0a0a;
+            padding: 10px 15px;
+            margin: 8px 0;
+            border-radius: 6px;
+            border-left: 3px solid #00ff00;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-online {
+            background: #44ff44;
+            box-shadow: 0 0 10px rgba(68, 255, 68, 0.5);
+        }
+
+        .status-offline {
+            background: #ff4444;
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+        }
+
+        .refresh-btn {
+            background: linear-gradient(135deg, #00ff00 0%, #00cc00 100%);
+            color: #000;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+
+        .refresh-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.4);
+        }
+
+        .refresh-btn:active {
+            transform: scale(0.98);
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 50px;
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .timestamp {
+            color: #666;
+            font-size: 0.85em;
+            margin-top: 15px;
+            border-top: 1px solid #333;
+            padding-top: 10px;
+        }
+
+        .no-data {
+            text-align: center;
+            color: #888;
+            padding: 20px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 Tacticool Live Dashboard</h1>
+            <p>Powered by Tactiopbot</p>
+            <p style="color: #666; font-size: 0.9em; margin-top: 10px;">
+                <span class="status-indicator status-online"></span>
+                <span id="status-text">متصل وشغال</span>
+            </p>
+        </header>
+
+        <div class="dashboard">
+            <!-- Player ID Card -->
+            <div class="card">
+                <div class="card-icon">🆔</div>
+                <div class="card-title">Session ID</div>
+                <div class="card-value" id="player-id">
+                    <span class="loading">جاري التحميل...</span>
+                </div>
+                <button class="refresh-btn" onclick="refreshData()">تحديث البيانات</button>
+            </div>
+
+            <!-- Available Regions Card -->
+            <div class="card">
+                <div class="card-icon">🌍</div>
+                <div class="card-title">السيرفرات المتاحة</div>
+                <div class="card-value" style="border-left: 4px solid #ff9900; flex-direction: column; align-items: flex-start;">
+                    <div id="regions-list" style="width: 100%;">
+                        <span class="loading">جاري التحميل...</span>
+                    </div>
+                </div>
+                <button class="refresh-btn" onclick="refreshData()">تحديث البيانات</button>
+            </div>
+
+            <!-- Shop Offers Card -->
+            <div class="card">
+                <div class="card-icon">🛒</div>
+                <div class="card-title">عروض المتجر النشطة</div>
+                <div class="card-value" style="border-left: 4px solid #00ccff; flex-direction: column; align-items: flex-start;">
+                    <div id="offers-list" style="width: 100%;">
+                        <span class="loading">جاري التحميل...</span>
+                    </div>
+                </div>
+                <button class="refresh-btn" onclick="refreshData()">تحديث البيانات</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title" style="text-align: center; font-size: 1.5em;">🔍 البحث عن لاعب</div>
+            <div style="display: flex; gap: 10px; margin: 20px 0;">
+                <input 
+                    type="text" 
+                    id="search-input" 
+                    placeholder="ابحث بـ Player ID..." 
+                    style="
+                        flex: 1;
+                        padding: 12px 15px;
+                        background: #0a0a0a;
+                        border: 2px solid #333;
+                        border-radius: 8px;
+                        color: #e0e0e0;
+                        font-size: 1em;
+                        transition: all 0.3s ease;
+                    "
+                    onkeypress="if(event.key==='Enter') searchPlayer()"
+                />
+                <button 
+                    onclick="searchPlayer()" 
+                    style="
+                        padding: 12px 30px;
+                        background: linear-gradient(135deg, #ffd700 0%, #ffaa00 100%);
+                        color: #000;
+                        border: none;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-weight: bold;
+                        font-size: 1em;
+                        transition: all 0.3s ease;
+                    "
+                    onmouseover="this.style.transform='scale(1.05)'"
+                    onmouseout="this.style.transform='scale(1)'"
+                >
+                    Search 🔍
+                </button>
+            </div>
+            <div id="search-result"></div>
+        </div>
+            <div class="card-value" style="border-left: 4px solid #cc00cc; font-size: 0.85em; height: auto; max-height: 300px; overflow-y: auto;">
+                <pre id="json-response">جاري التحميل...</pre>
+            </div>
+            <div class="timestamp">
+                آخر تحديث: <span id="last-update">--</span>
+            </div>
+        </div>
+
+        <footer>
+            <p>💓 Dashboard made with ❤️ | Tactiopbot v1.0</p>
+            <p style="margin-top: 10px; color: #444;">
+                API Endpoint: <code style="background: #0a0a0a; padding: 2px 6px; border-radius: 3px; color: #00ff00;">/api/tacticool</code>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // Auto-refresh every 10 seconds
+        setInterval(refreshData, 10000);
+
+        // Initial load
+        refreshData();
+
+        async function refreshData() {
+            try {
+                const response = await fetch('/api/tacticool');
+                const data = await response.json();
+
+                if (data.status !== 'success') {
+                    showError('API رجعت خطأ: ' + (data.message || 'خطأ غير معروف'));
+                    return;
+                }
+
+                const tacticool = data.data || {};
+
+                // Update Player ID
+                const playerIdElement = document.getElementById('player-id');
+                playerIdElement.innerHTML = `<span class="success">${tacticool.playerId || 'غير معروف'}</span>`;
+
+                // Update Regions
+                const regionsList = document.getElementById('regions-list');
+                if (tacticool.regions && tacticool.regions.length > 0) {
+                    regionsList.innerHTML = tacticool.regions.map(r => `<div class="list-item">🌐 ${r}</div>`).join('');
+                } else {
+                    regionsList.innerHTML = '<div class="no-data">لا توجد بيانات متاحة</div>';
+                }
+
+                // Update Shop Offers
+                const offersList = document.getElementById('offers-list');
+                if (tacticool.shopOffers && tacticool.shopOffers.length > 0) {
+                    offersList.innerHTML = tacticool.shopOffers.slice(0, 10).map(o => 
+                        `<div class="list-item">🎁 ${o}</div>`
+                    ).join('');
+                } else {
+                    offersList.innerHTML = '<div class="no-data">لا توجد عروض متاحة حالياً</div>';
+                }
+
+                // Update JSON Response
+                document.getElementById('json-response').textContent = JSON.stringify(data, null, 2);
+
+                // Update timestamp
+                const now = new Date();
+                document.getElementById('last-update').textContent = now.toLocaleTimeString('ar-SA');
+
+                // Update status
+                document.getElementById('status-text').textContent = 'متصل وشغال';
+                const statusIndicator = document.querySelector('.status-indicator');
+                statusIndicator.classList.remove('status-offline');
+                statusIndicator.classList.add('status-online');
+
+            } catch (error) {
+                showError('❌ خطأ في الاتصال: ' + error.message);
+                const statusIndicator = document.querySelector('.status-indicator');
+                statusIndicator.classList.remove('status-online');
+                statusIndicator.classList.add('status-offline');
+                document.getElementById('status-text').textContent = 'غير متصل';
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('player-id').innerHTML = `<span class="error">${message}</span>`;
+            document.getElementById('json-response').textContent = message;
+        }
+
+        // Player Search Function
+        async function searchPlayer() {
+            const searchInput = document.getElementById('search-input');
+            const playerId = searchInput.value.trim();
+            const resultDiv = document.getElementById('search-result');
+
+            if (!playerId) {
+                resultDiv.innerHTML = '<div class="error">⚠️ اكتب الـ Player ID الأول يا بطل!</div>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<div style="text-align: center; color: #888;"><span style="display: inline-block; animation: spin 1s linear infinite;">⚙️</span> جاري البحث في السيرفرات...</div>';
+
+            try {
+                const response = await fetch(`/api/search/${encodeURIComponent(playerId)}`);
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    const player = data.data;
+                    
+                    resultDiv.innerHTML = `
+                        <div style="background: #0a0a0a; padding: 20px; border-radius: 8px; border-left: 4px solid #00ff00;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px;">
+                                <div>
+                                    <div style="color: #888; font-size: 0.9em;">اسم اللاعب</div>
+                                    <div style="color: #00ff00; font-size: 1.3em; font-weight: bold;">${player.nickname || 'Unknown'}</div>
+                                </div>
+                                <div>
+                                    <div style="color: #888; font-size: 0.9em;">المستوى</div>
+                                    <div style="color: #ffaa00; font-size: 1.3em; font-weight: bold;">Level ${player.level || '0'}</div>
+                                </div>
+                                <div>
+                                    <div style="color: #888; font-size: 0.9em;">الكلان</div>
+                                    <div style="color: #00ccff; font-size: 1.1em;">${player.clanName || 'بدون كلان'}</div>
+                                </div>
+                                <div>
+                                    <div style="color: #888; font-size: 0.9em;">الـ Rating</div>
+                                    <div style="color: #ff6b6b; font-size: 1.3em; font-weight: bold;">${player.rating || '0'}</div>
+                                </div>
+                                <div>
+                                    <div style="color: #888; font-size: 0.9em;">الانتصارات</div>
+                                    <div style="color: #44ff44; font-size: 1.1em;">${player.wins || '0'} <span style="color: #666;">/ ${(player.wins || 0) + (player.losses || 0)}</span></div>
+                                </div>
+                                <div>
+                                    <div style="color: #888; font-size: 0.9em;">الـ Kills</div>
+                                    <div style="color: #ffaa00; font-size: 1.1em;">${player.kills || '0'}</div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; color: #666; font-size: 0.85em;">
+                                🆔 ${player.playerId}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ ${data.message || 'لم يتم العثور على اللاعب'}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ خطأ في الاتصال: ${error.message}</div>`;
+            }
+        }
+
+        // Add spin animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
+</body>
+</html>

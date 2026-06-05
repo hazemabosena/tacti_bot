@@ -1,0 +1,41 @@
+Windows C: disk cleanup (target: 10–20GB) — safe → aggressive
+
+1) Safe first (usually recovers several GB)
+- Empty Recycle Bin
+- Storage Sense:
+  Settings → System → Storage → Storage Sense → Run now
+- Clear temp:
+  Win+R → %temp% → delete what you can
+  Win+R → temp → delete what you can
+
+2) Disk Cleanup + Windows Update cleanup (Admin CMD)
+- Open Command Prompt as Administrator
+- Run:
+  DISM /Online /Cleanup-Image /StartComponentCleanup
+- Run Disk Cleanup:
+  cleanmgr
+  Select C:
+  Check:
+    • Windows Update Cleanup
+    • Delivery Optimization Files
+    • Temporary files
+    • (any other “cleanup” entries shown)
+  Click OK / Delete Files
+
+3) Aggressive (irreversible) option: ResetBase (Admin CMD)
+- Only if you need more space after step 2.
+- Run:
+  DISM /Online /Cleanup-Image /StartComponentCleanup /ResetBase
+
+4) npm cache (if you run Node projects like this repo)
+- In the project folder (or any folder with Node installed) run:
+  npm cache clean --force
+
+5) Biggest-risk avoid
+- Do NOT manually delete:
+  C:\Windows\WinSxS
+  C:\Windows\System32
+  other Windows system folders
+
+If you follow steps 1→2→3, 10–20GB is commonly achievable.
+

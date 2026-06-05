@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package Meta;
+
+message Account {
+  string playerId = 1;
+  uint64 version = 2;
+  string name = 3;
+  uint32 premiumStatus = 4;
+  uint32 subscriptionExpireTime = 5;
+  int64 softCurrency = 6;
+  int64 hardCurrency = 7;
+
+  uint32 experience = 12;
+  uint32 rating = 13;
+  uint32 level = 14;
+  uint32 maxClaimedRatingReward = 15;
+
+  string countryCode = 16;
+  uint32 matchesCount = 17;
+  uint32 zombieMatchesCount = 18;
+  uint32 robberyMatchesCount = 19;
+  uint32 winsCount = 20;
+  uint32 totalMatchTime = 21;
+  uint32 totalKills = 22;
+
+  uint32 primaryWeaponKills = 23;
+  uint32 secondaryWeaponKills = 24;
+  uint32 explosiveKills = 25;
+  uint32 physicsKills = 26;
+  uint32 meleeKills = 27;
+  uint32 vehicleKills = 28;
+  uint32 assists = 29;
+}
+
