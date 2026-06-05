@@ -548,14 +548,30 @@ client.on("messageCreate", async (message) => {
       // AI triggers
       const botUserId = client.user && client.user.id;
       const botTag = client.user && client.user.tag ? client.user.tag : '';
+
+      const msgContent = (message.content || '').trim();
+
+      // Mention trigger
       const mentioned =
         (message.mentions && botUserId ? message.mentions.has(botUserId) : false) ||
-        (botUserId ? (message.content || '').includes(`<@${botUserId}>`) || (message.content || '').includes(`<@!${botUserId}>`) : false) ||
-        (botTag ? (message.content || '').includes(`@${botTag}`) : false);
+        (botUserId ? msgContent.includes(`<@${botUserId}>`) || msgContent.includes(`<@!${botUserId}>`) : false) ||
+        (botTag ? msgContent.includes(`@${botTag}`) : false);
 
+      // Reply-to-bot trigger (Discord reply threads)
+      let repliedToBot = false;
+      try {
+        if (message.reference && message.reference.messageId) {
+          const refMsg = await message.channel.messages.fetch(message.reference.messageId);
+          repliedToBot = !!(refMsg && refMsg.author && botUserId && refMsg.author.id === botUserId);
+        }
+      } catch {
+        // ignore fetch errors (no permissions / missing message)
+      }
+
+      // Random trigger (ONLY when not a command)
       const chancePercent = Number(process.env.AI_RANDOM_PERCENT || "1");
-      const shouldRandomReply = Math.random() * 100 < chancePercent;
-      const looksLikeCommand = message.content.trim().startsWith("!") || message.content.trim().startsWith("/");
+      const looksLikeCommand = msgContent.startsWith("!") || msgContent.startsWith("/");
+      const shouldRandomReply = !looksLikeCommand && Math.random() * 100 < chancePercent;
 
       client._aiCooldown = client._aiCooldown || new Map();
       const now = Date.now();
@@ -564,27 +580,33 @@ client.on("messageCreate", async (message) => {
       const cooldownMs = Number(process.env.AI_COOLDOWN_MS || "30000");
       const canReply = now - last >= cooldownMs;
 
-      const shouldReply = !looksLikeCommand && canReply && (mentioned || shouldRandomReply);
+      const shouldReply = canReply && (mentioned || repliedToBot || shouldRandomReply);
       if (!shouldReply) return;
       client._aiCooldown.set(cooldownKey, now);
 
       const systemPrompt =
         process.env.AI_SYSTEM_PROMPT ||
-        "You are Tactiopbot, a helpful Discord bot for Tacticool. Keep replies short, friendly, and relevant. If user asks about stats or operators, be helpful.";
+        "You are Tactiopbot, a helpful Discord bot for Tacticool. Keep replies short (1-3 sentences), friendly, and relevant. If user asks about stats or operators, be helpful.";
 
-      const userText = message.content
+      const userText = msgContent
         .replace(new RegExp(`<@!?${botUserId}>`, "g"), "")
         .trim();
 
       const contextText = process.env.AI_CONTEXT || "If you are unsure, ask a short follow-up question.";
 
-      const replyText = await generateReply({
-        userText: userText || message.content,
-        systemPrompt,
-        contextText,
-        maxTokens: Number(process.env.AI_MAX_TOKENS || "180"),
-        temperature: Number(process.env.AI_TEMPERATURE || "0.8"),
-      });
+      let replyText = '';
+      try {
+        replyText = await generateReply({
+          userText: userText || message.content,
+          systemPrompt,
+          contextText,
+          maxTokens: Number(process.env.AI_MAX_TOKENS || "180"),
+          temperature: Number(process.env.AI_TEMPERATURE || "0.8"),
+        });
+      } catch (err) {
+        console.error('OpenAI generateReply failed:', err && err.message ? err.message : err);
+        replyText = "Sorry—AI is having trouble right now.";
+      }
 
       if (!replyText) return;
       return await message.reply({

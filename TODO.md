@@ -1,9 +1,7 @@
-# TODO
+- [ ] Review AI reply trigger logic in index.js (mention + random + cooldown)
+- [x] Add “user replies to bot” trigger using message reference
 
-- [x] Create `account.proto` in repo root.
-- [x] Add protobuf decoder helper `scripts/parser.js`.
-- [x] Add Discord embed builder `scripts/profileEmbed.js`.
-- [ ] Wire parser + embed into the existing `/view` command flow.
-- [x] Add a small runtime test script to decode sample packet.bin buffers.
-
+- [ ] Ensure random trigger uses AI_RANDOM_PERCENT only for non-command messages
+- [ ] Add graceful OpenAI error handling (fallback response)
+- [ ] Update README/.env instructions (do not commit API key)
 
