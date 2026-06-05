@@ -615,18 +615,12 @@ client.on("messageCreate", async (message) => {
       });
     }
 
-    // !tacticool command flow
-    const apiUrl = process.env.TACTICOOL_API_URL || "http://localhost:3000/api/tacticool";
-
-    const response = await fetch(apiUrl);
-    const result = await response.json();
-
-    if (!result || result.status !== "success") {
-      await message.reply("❌ API رجعت بيانات غير متوقعة.");
-      return;
-    }
+    // !tacticool command flow (disabled)
+    await message.reply("ℹ️ Tacticool API is disabled in this build. Mention/reply to me to chat with AI.");
+    return;
 
     const tacticool = result.data || {};
+
 
     const embed = new EmbedBuilder()
       .setTitle("📊 بيانات سيرفر Tacticool (Tactiopbot API)")
