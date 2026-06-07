@@ -543,41 +543,42 @@ client.on("messageCreate", async (message) => {
   try {
     if (message.author.bot) return;
 
+    // Preserve existing !tacticool behavior (AI disabled for that command)
     const isTacticoolCmd = message.content === "!tacticool";
     if (!isTacticoolCmd) {
-      // AI triggers
       const botUserId = client.user && client.user.id;
-      const botTag = client.user && client.user.tag ? client.user.tag : '';
+      const botTag = client.user && client.user.tag ? client.user.tag : "";
 
-      const msgContent = (message.content || '').trim();
+      const msgContent = (message.content || "").trim();
 
-      // Mention trigger
+      // Mention trigger (using both API mentions + string fallback)
       const mentioned =
         (message.mentions && botUserId ? message.mentions.has(botUserId) : false) ||
         (botUserId ? msgContent.includes(`<@${botUserId}>`) || msgContent.includes(`<@!${botUserId}>`) : false) ||
         (botTag ? msgContent.includes(`@${botTag}`) : false);
 
-      // Reply-to-bot trigger (Discord reply threads)
+      // Reply-to-bot trigger (user replies to the bot message)
       let repliedToBot = false;
-      try {
-        if (message.reference && message.reference.messageId) {
+      if (message.reference && message.reference.messageId && botUserId) {
+        try {
           const refMsg = await message.channel.messages.fetch(message.reference.messageId);
-          repliedToBot = !!(refMsg && refMsg.author && botUserId && refMsg.author.id === botUserId);
+          repliedToBot = !!(refMsg && refMsg.author && refMsg.author.id === botUserId);
+        } catch {
+          // ignore fetch errors (no permissions / missing message)
         }
-      } catch {
-        // ignore fetch errors (no permissions / missing message)
       }
 
-      // Random trigger (ONLY when not a command)
-      const chancePercent = Number(process.env.AI_RANDOM_PERCENT || "1");
+      // Random trigger: ONLY on non-command messages
+      const chancePercent = Math.max(0, Math.min(100, Number(process.env.AI_RANDOM_PERCENT || "1")));
       const looksLikeCommand = msgContent.startsWith("!") || msgContent.startsWith("/");
       const shouldRandomReply = !looksLikeCommand && Math.random() * 100 < chancePercent;
 
+      // Cooldown per author per channel
       client._aiCooldown = client._aiCooldown || new Map();
       const now = Date.now();
       const cooldownKey = `${message.channel.id}:${message.author.id}`;
       const last = client._aiCooldown.get(cooldownKey) || 0;
-      const cooldownMs = Number(process.env.AI_COOLDOWN_MS || "30000");
+      const cooldownMs = Math.max(0, Number(process.env.AI_COOLDOWN_MS || "30000"));
       const canReply = now - last >= cooldownMs;
 
       const shouldReply = canReply && (mentioned || repliedToBot || shouldRandomReply);
@@ -588,38 +589,40 @@ client.on("messageCreate", async (message) => {
         process.env.AI_SYSTEM_PROMPT ||
         "You are Tactiopbot, a helpful Discord bot for Tacticool. Keep replies short (1-3 sentences), friendly, and relevant. If user asks about stats or operators, be helpful.";
 
+      // Remove mention markup from input before sending to the model
       const userText = msgContent
         .replace(new RegExp(`<@!?${botUserId}>`, "g"), "")
         .trim();
 
       const contextText = process.env.AI_CONTEXT || "If you are unsure, ask a short follow-up question.";
 
-      let replyText = '';
+      let replyText = "";
       try {
         replyText = await generateReply({
-          userText: userText || message.content,
+          userText: userText || msgContent,
           systemPrompt,
           contextText,
           maxTokens: Number(process.env.AI_MAX_TOKENS || "180"),
           temperature: Number(process.env.AI_TEMPERATURE || "0.8"),
         });
       } catch (err) {
-        console.error('OpenAI generateReply failed:', err && err.message ? err.message : err);
+        console.error("OpenAI generateReply failed:", err && err.message ? err.message : err);
         replyText = "Sorry—AI is having trouble right now.";
       }
 
+      replyText = (replyText || "").trim();
       if (!replyText) return;
+
       return await message.reply({
         content: replyText.slice(0, 1900),
         allowedMentions: { repliedUser: false },
       });
     }
 
+
     // !tacticool command flow (disabled)
     await message.reply("ℹ️ Tacticool API is disabled in this build. Mention/reply to me to chat with AI.");
     return;
-
-    const tacticool = result.data || {};
 
 
     const embed = new EmbedBuilder()
