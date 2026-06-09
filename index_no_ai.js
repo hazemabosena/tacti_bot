@@ -1,8 +1,6 @@
-// index.js
-// NOTE: AI texting/reply cycle was removed. This file keeps only:
-// - slash command handling
-// - existing express endpoints used by the web dashboard
-// - mission operator data fixes live in missionDataActive.js
+// index_no_ai.js
+// NOTE: This file is a clean copy of index.js WITHOUT the AI texting/reply cycle.
+// It is provided to keep the bot functional while missionDataActive fixes are deployed.
 
 const { Client, GatewayIntentBits, Collection } = require("discord.js");
 const fs = require("fs");
@@ -32,16 +30,19 @@ function loadCommandsFromFs() {
         const full = path.join(commandsDir, file);
         delete require.cache[require.resolve(full)];
         const command = require(full);
-        if (command?.data?.name) client.commands.set(command.data.name, command);
+        if (command && command.data && command.data.name) {
+          client.commands.set(command.data.name, command);
+        }
       }
     }
   } catch (err) {
-    console.error("Error while scanning commands:", err?.message || err);
+    console.error("Error while scanning commands:", err && err.message);
   }
 }
 
 loadCommandsFromFs();
 
+// fallback command
 if (client.commands.size === 0) {
   try {
     const { SlashCommandBuilder } = require("discord.js");
@@ -63,10 +64,7 @@ async function registerCommands() {
   try {
     if (!DISCORD_TOKEN || !process.env.CLIENT_ID) return;
 
-    const commands = Array.from(client.commands.values())
-      .map((cmd) => cmd.data?.toJSON())
-      .filter(Boolean);
-
+    const commands = Array.from(client.commands.values()).map((cmd) => cmd.data?.toJSON()).filter(Boolean);
     if (!commands.length) return;
 
     const { REST, Routes } = require("discord.js");
@@ -81,7 +79,7 @@ async function registerCommands() {
       await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
     }
   } catch (err) {
-    console.error("Failed to register commands:", err?.message || err);
+    console.error("Failed to register commands:", err);
   }
 }
 
@@ -89,12 +87,6 @@ registerCommands().catch((err) => console.error("registerCommands failed:", err)
 
 client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  try {
-    loadCommandsFromFs();
-    console.log("clientReady: loaded commands:", Array.from(client.commands.keys()));
-  } catch (err) {
-    console.warn("clientReady: failed to re-load commands:", err?.message || err);
-  }
 });
 
 if (!DISCORD_TOKEN) {
@@ -102,42 +94,26 @@ if (!DISCORD_TOKEN) {
   process.exit(1);
 }
 
-// === Express Web Server Setup ===
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.static(path.join(__dirname, "public")));
-
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-app.use((req, res) => {
-  res.status(404).json({ error: "Not Found" });
-});
-
-app.listen(PORT, () => {
-  console.log(`🌐 running on http://localhost:${PORT}`);
-});
-
+// interactions
 client.on("interactionCreate", async (interaction) => {
-  try {
-    if (interaction.isAutocomplete()) {
-      const command = client.commands.get(interaction.commandName);
-      if (!command || typeof command.autocomplete !== "function") return;
-      await command.autocomplete(interaction);
-      return;
-    }
-
-    if (!interaction.isChatInputCommand()) return;
-
+  if (interaction.isAutocomplete()) {
     const command = client.commands.get(interaction.commandName);
-    if (!command) return;
+    if (!command || typeof command.autocomplete !== "function") return;
+    try {
+      await command.autocomplete(interaction);
+    } catch (error) {
+      console.error("Autocomplete error:", error);
+      try { await interaction.respond([]); } catch {}
+    }
+    return;
+  }
 
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
     await command.execute(interaction);
   } catch (error) {
     console.error(error);
@@ -151,21 +127,12 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-process.on("SIGINT", async () => {
-  try {
-    await client.destroy();
-  } finally {
-    process.exit(0);
-  }
-});
-
-process.on("SIGTERM", async () => {
-  try {
-    await client.destroy();
-  } finally {
-    process.exit(0);
-  }
-});
-
 client.login(DISCORD_TOKEN);
+
+// Minimal express server (keeps existing endpoints optional; remove if undesired)
+const app = express();
+const PORT = process.env.PORT || 3000;
+app.use(express.static(path.join(__dirname, "public")));
+app.get("/health", (req, res) => res.status(200).json({ status: "ok", timestamp: new Date().toISOString() }));
+app.listen(PORT, () => console.log(`🌐 running on http://localhost:${PORT}`));
 

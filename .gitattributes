@@ -1,0 +1,8 @@
+TactiAPI/WindowsDump/* filter=lfs diff=lfs merge=lfs -text
+TactiAPI/Il2CppDumper-win-*/** filter=lfs diff=lfs merge=lfs -text
+TactiAPI/il2cpp.h filter=lfs diff=lfs merge=lfs -text
+TactiAPI/libil2cpp.so filter=lfs diff=lfs merge=lfs -text
+TactiAPI/*script.json filter=lfs diff=lfs merge=lfs -text
+TactiAPI/*dump.cs filter=lfs diff=lfs merge=lfs -text
+TactiAPI/*il2cpp.h filter=lfs diff=lfs merge=lfs -text
+TactiAPI/*.so filter=lfs diff=lfs merge=lfs -text
