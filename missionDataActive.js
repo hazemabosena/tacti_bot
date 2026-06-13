@@ -127,7 +127,7 @@
     "Rick": 159,
     "Mishka": 157
   },
-  "HLDR": {
+  "HILDR": {
     "Whisper": 353,
     "Varg": 350,
     "Jason": 346,
@@ -166,7 +166,8 @@
     "Rookie": 159,
     "Rick": 159,
     "Mishka": 157,
-    "Lens": 135
+    "Lens": 135,
+    "Ferry": 108
   },
   "Breach": {
     "Ferry": 192,
@@ -363,7 +364,6 @@
     "David": 197,
     "Capisce": 194,
     "Joe": 194,
-    "Valera": 194,
     "Owen": 179,
     "McMean": 171,
     "Mia": 165,
@@ -415,7 +415,7 @@
     "Lens": 135
   },
   "Cover": {
-    "Rey": 388,
+    "Ray": 388,
     "Phoenix": 388,
     "Miro": 364,
     "Dutch": 328,
@@ -467,7 +467,7 @@
     "Snek": 234,
     "Diana": 228,
     "Chen Li": 228,
-    "Rey": 218,
+    "Ray": 218,
     "JB": 218,
     "Phoenix": 218,
     "Apollon": 212,
@@ -503,7 +503,7 @@
     "Snek": 363,
     "Diana": 353,
     "Chen Li": 353,
-    "Rey": 338,
+    "Ray": 338,
     "JB": 338,
     "Phoenix": 338,
     "Apollon": 328,
@@ -544,7 +544,7 @@
     "Snek": 234,
     "Diana": 228,
     "Chen Li": 228,
-    "Rey": 218,
+    "Ray": 218,
     "JB": 218,
     "Phoenix": 218,
     "Apollon": 212,
@@ -612,13 +612,14 @@
     "Spencer": 181,
     "Hawk": 151,
     "Rookie": 137,
-    "Mishka": 137
+    "Mishka": 137,
+    "Ferry": 108
   },
   "Recon": {
     "Charon": 456,
     "Apollon": 326,
     "Snek": 416,
-    "Rey": 388,
+    "Ray": 388,
     "Klaus": 270,
     "Miro": 205,
     "Hawk": 246,
