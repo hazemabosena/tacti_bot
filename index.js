@@ -167,5 +167,23 @@ process.on("SIGTERM", async () => {
   }
 });
 
+// Register commands from both local commands folder and moved TACTIAPI folder (if present)
+try {
+  const extraDir = path.resolve(__dirname, '..', '..', 'TACTIAPI');
+  if (fs.existsSync(extraDir)) {
+    const extraFiles = fs.readdirSync(extraDir).filter((f) => f.endsWith('.js'));
+    for (const file of extraFiles) {
+      const full = path.join(extraDir, file);
+      delete require.cache[require.resolve(full)];
+      const cmd = require(full);
+      if (cmd?.data?.name) client.commands.set(cmd.data.name, cmd);
+    }
+  }
+} catch (e) {
+  console.warn('Extra command folder (TACTIAPI) not loaded:', e?.message || e);
+}
+
 client.login(DISCORD_TOKEN);
+
+
 
