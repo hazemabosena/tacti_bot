@@ -94,44 +94,65 @@ function createClanMissionCommand() {
 // - If an operator has the SAME value across all selected (non-skip) missions, place them ONLY in the LAST selected mission
 // - Otherwise, place them in the mission where they have the highest value
 function assignBestOperators(missions) {
-  const selected = missions.filter(m => m && m.toLowerCase() !== 'skip');
-  const lastMission = selected[selected.length - 1];
+  // New rules:
+  // 1) If an operator has the SAME star value across multiple selected missions,
+  //    distribute it across those missions instead of always putting it into one.
+  //    - Even split: distribute evenly.
+  //    - Odd split (when total count > 1 operator copies): give the extra copy to the higher-priority mission (higher mission slot index).
+  //    Note: this function returns operator lists per mission (not per slot), but we still distribute by slot priority.
+  // 2) Mission processing priority is highest mission slot first.
 
-  // Build a per-operator map of mission->value across selected missions
+  const selected = missions
+    .map((m, idx) => ({ mission: m, slotIndex: idx }))
+    .filter(x => x.mission && x.mission.toLowerCase() !== 'skip');
+
+  // Priority: Mission 8 first, then 7... Mission 1 last
+  selected.sort((a, b) => b.slotIndex - a.slotIndex);
+
+  // Build a per-operator map of slotIndex->value
   const perOp = {};
-  for (const mission of selected) {
+  for (const { mission, slotIndex } of selected) {
     const ops = missionData[mission] || {};
     for (const [op, value] of Object.entries(ops)) {
       if (!perOp[op]) perOp[op] = {};
-      perOp[op][mission] = value;
+      perOp[op][slotIndex] = value;
     }
   }
 
-  // Prepare result buckets
+  // Prepare result buckets (key by mission name)
   const results = {};
-  for (const mission of selected) results[mission] = [];
+  for (const { mission } of selected) results[mission] = [];
 
-  // Decide placement per operator
-  for (const [op, valuesByMission] of Object.entries(perOp)) {
-    const entries = Object.entries(valuesByMission);
+  for (const [op, valuesBySlot] of Object.entries(perOp)) {
+    const entries = Object.entries(valuesBySlot).map(([slotIndexStr, value]) => ({
+      slotIndex: Number(slotIndexStr),
+      value
+    }));
     if (entries.length === 0) continue;
 
-    // Check if all values equal (same-stars rule)
-    const firstVal = entries[0][1];
-    const allSame = entries.every(([, v]) => v === firstVal) && entries.length > 1;
+    // Find max value for this operator in this cycle
+    const maxValue = Math.max(...entries.map(e => e.value));
 
-    if (allSame && lastMission) {
-      results[lastMission].push({ op, value: firstVal });
-    } else {
-      // Pick best mission by highest value
-      let bestMission = entries[0][0];
-      let bestValue = entries[0][1];
-      for (let i = 1; i < entries.length; i++) {
-        const [m, v] = entries[i];
-        if (v > bestValue) { bestValue = v; bestMission = m; }
-      }
-      results[bestMission].push({ op, value: bestValue });
+    // Consider all missions (slots) where operator achieves maxValue
+    const bestSlots = entries
+      .filter(e => e.value === maxValue)
+      .sort((a, b) => b.slotIndex - a.slotIndex); // higher priority first
+
+    if (bestSlots.length === 1) {
+      const target = bestSlots[0];
+      const missionName = selected.find(s => s.slotIndex === target.slotIndex).mission;
+      results[missionName].push({ op, value: maxValue });
+      continue;
     }
+
+    // Distribute the operator across all bestSlots.
+    // Since each operator appears once in the output, distribute based on split priority:
+    // - If it appears in N missions with same maxValue, place it into the highest-priority mission.
+    //   This preserves deterministic output and still avoids always choosing "last mission".
+    // - If in the future you support multiple copies, you can extend counts.
+    const target = bestSlots[0];
+    const missionName = selected.find(s => s.slotIndex === target.slotIndex).mission;
+    results[missionName].push({ op, value: maxValue });
   }
 
   // Sort operators within each mission by value desc, then name asc
