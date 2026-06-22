@@ -123,6 +123,8 @@ function assignBestOperators(missions) {
   const results = {};
   for (const { mission } of selected) results[mission] = [];
 
+  // Group operators by their tie pattern (which missions they achieve max value in)
+  const tieGroups = {};
   for (const [op, valuesBySlot] of Object.entries(perOp)) {
     const entries = Object.entries(valuesBySlot).map(([slotIndexStr, value]) => ({
       slotIndex: Number(slotIndexStr),
@@ -130,29 +132,42 @@ function assignBestOperators(missions) {
     }));
     if (entries.length === 0) continue;
 
-    // Find max value for this operator in this cycle
     const maxValue = Math.max(...entries.map(e => e.value));
-
-    // Consider all missions (slots) where operator achieves maxValue
     const bestSlots = entries
       .filter(e => e.value === maxValue)
       .sort((a, b) => b.slotIndex - a.slotIndex); // higher priority first
 
-    if (bestSlots.length === 1) {
-      const target = bestSlots[0];
-      const missionName = selected.find(s => s.slotIndex === target.slotIndex).mission;
-      results[missionName].push({ op, value: maxValue });
-      continue;
-    }
+    const tieKey = bestSlots.map(s => s.slotIndex).join(',');
+    if (!tieGroups[tieKey]) tieGroups[tieKey] = { slots: bestSlots, operators: [] };
+    tieGroups[tieKey].operators.push({ op, maxValue });
+  }
 
-    // Distribute the operator across all bestSlots.
-    // Since each operator appears once in the output, distribute based on split priority:
-    // - If it appears in N missions with same maxValue, place it into the highest-priority mission.
-    //   This preserves deterministic output and still avoids always choosing "last mission".
-    // - If in the future you support multiple copies, you can extend counts.
-    const target = bestSlots[0];
-    const missionName = selected.find(s => s.slotIndex === target.slotIndex).mission;
-    results[missionName].push({ op, value: maxValue });
+  // Distribute operators within each tie group
+  for (const { slots, operators } of Object.values(tieGroups)) {
+    if (slots.length === 1) {
+      // No tie - assign all to the single best slot
+      const missionName = selected.find(s => s.slotIndex === slots[0].slotIndex).mission;
+      for (const { op, maxValue } of operators) {
+        results[missionName].push({ op, value: maxValue });
+      }
+    } else {
+      // Tie - distribute evenly across slots
+      // Sort operators alphabetically for deterministic distribution
+      operators.sort((a, b) => a.op.localeCompare(b.op));
+
+      const perSlot = Math.floor(operators.length / slots.length);
+      const remainder = operators.length % slots.length;
+
+      let opIndex = 0;
+      for (let i = 0; i < slots.length; i++) {
+        const count = perSlot + (i < remainder ? 1 : 0);
+        const missionName = selected.find(s => s.slotIndex === slots[i].slotIndex).mission;
+        for (let j = 0; j < count; j++) {
+          results[missionName].push({ op: operators[opIndex].op, value: operators[opIndex].maxValue });
+          opIndex++;
+        }
+      }
+    }
   }
 
   // Sort operators within each mission by value desc, then name asc
