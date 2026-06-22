@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { AttachmentBuilder } = require("discord.js");
 const generateMissionImage = require("../image/generateMissionImage.js");
+const { buildGameChatMessages } = require("../utils/gameChatMode");
 const { missionData } = require("../missionDataActive.js");
 const {
   languages,
@@ -32,7 +33,8 @@ const missionChoices = [
 
 const placementModes = [
   { name: "Default Mode", value: "default" },
-  { name: "Smart Balance Mode", value: "smart_balance" }
+  { name: "Smart Balance Mode", value: "smart_balance" },
+  { name: "Game Chat Mode", value: "gamechat", description: "Generate Tacticool chat messages" }
 ];
 
 function addMissionOption(command, optionName, description) {
@@ -90,17 +92,13 @@ function createClanMissionCommand() {
   return command;
 }
 
-// Assign operators with special rules:
-// - If an operator has the SAME value across all selected (non-skip) missions, place them ONLY in the LAST selected mission
-// - Otherwise, place them in the mission where they have the highest value
+// Assign operators with fair distribution rules:
+// - If an operator has the SAME star value across multiple selected missions, distribute it fairly across those missions.
+//   - Even split: distribute evenly.
+//   - Odd split: give the extra copy to the higher-priority mission (higher mission slot index, e.g. Mission 8 > Mission 7).
+// - Otherwise, place the operator in the mission where it has the highest value.
+// - Missions are processed from highest priority to lowest (Mission 8 → Mission 1).
 function assignBestOperators(missions) {
-  // New rules:
-  // 1) If an operator has the SAME star value across multiple selected missions,
-  //    distribute it across those missions instead of always putting it into one.
-  //    - Even split: distribute evenly.
-  //    - Odd split (when total count > 1 operator copies): give the extra copy to the higher-priority mission (higher mission slot index).
-  //    Note: this function returns operator lists per mission (not per slot), but we still distribute by slot priority.
-  // 2) Mission processing priority is highest mission slot first.
 
   const selected = missions
     .map((m, idx) => ({ mission: m, slotIndex: idx }))
@@ -193,9 +191,9 @@ function getAllOperatorNames() {
 }
 
 function calculateSmartQuotas(selectedSlots, operatorCount) {
-  const totalWeight = selectedSlots.reduce((sum, _slot, index) => sum + index + 1, 0);
-  const quotas = selectedSlots.map((_slot, index) => {
-    const weight = index + 1;
+  const totalWeight = selectedSlots.reduce((sum, slot) => sum + (slot.slotIndex + 1), 0);
+  const quotas = selectedSlots.map((slot) => {
+    const weight = slot.slotIndex + 1;
     const exact = (weight / totalWeight) * operatorCount;
     return {
       count: Math.round(exact),
@@ -250,7 +248,7 @@ function assignSmartBalanceOperators(missions) {
       .slice()
       .sort((a, b) =>
         (b.value - a.value) ||
-        (b.selectedIndex - a.selectedIndex) ||
+        (b.slotIndex - a.slotIndex) ||
         a.mission.localeCompare(b.mission)
       );
 
@@ -397,12 +395,38 @@ module.exports = {
       console.log("Attachment created. Sending reply with image...");
 
       // Use editReply if deferred, otherwise use followUp
+      const sendOptions = { content: reply };
+      if (placementMode !== "gamechat") {
+        sendOptions.files = [attachment];
+      }
+
       if (useDeferReply) {
-        await interaction.editReply({ content: reply, files: [attachment] });
+        await interaction.editReply(sendOptions);
         console.log("✅ Reply sent successfully with editReply!");
       } else {
-        await interaction.followUp({ content: reply, files: [attachment] });
+        await interaction.followUp(sendOptions);
         console.log("✅ Reply sent successfully with followUp!");
+      }
+
+      if (placementMode === "gamechat") {
+        const gamePlacements = missions.map((m, i) => {
+          if (!m || m.toLowerCase() === "skip") {
+            return { mission: null, operators: [] };
+          }
+          const opsList = smartResults
+            ? (smartResults[i] || [])
+            : (results[m] && results[m].length ? results[m] : []);
+          return {
+            mission: translateMission(m, language),
+            operators: opsList.map(o => translateOperator(o.op, language))
+          };
+        });
+
+        const gameMessages = buildGameChatMessages(gamePlacements);
+
+        for (const msg of gameMessages) {
+          await interaction.followUp(msg);
+        }
       }
       
     } catch (err) {
