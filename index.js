@@ -95,6 +95,13 @@ client.once("clientReady", async () => {
   } catch (err) {
     console.warn("clientReady: failed to re-load commands:", err?.message || err);
   }
+
+  try {
+    const { startScheduler } = require("./utils/clanMissionScheduler");
+    startScheduler(client);
+  } catch (err) {
+    console.error("Failed to start clan mission scheduler:", err?.message || err);
+  }
 });
 
 if (!DISCORD_TOKEN) {
