@@ -3,6 +3,7 @@ const {
   getGuildConfig,
   setGuildConfig
 } = require("../utils/clanMissionNotifier");
+const { getLanguageChoices } = require("../utils/cmNotificationLanguages");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -26,6 +27,13 @@ module.exports = {
         .setName("enabled")
         .setDescription("Enable or disable notifications")
         .setRequired(false)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("language")
+        .setDescription("Language for the notification message")
+        .setRequired(false)
+        .addChoices(getLanguageChoices())
     ),
 
   async execute(interaction) {
@@ -48,12 +56,14 @@ module.exports = {
     const channel = interaction.options.getChannel("channel");
     const role = interaction.options.getRole("role");
     const enabled = interaction.options.getBoolean("enabled");
+    const language = interaction.options.getString("language");
 
     const updated = {
       guildId: existing.guildId,
       channelId: channel ? channel.id : existing.channelId,
       roleId: role !== null ? role.id : existing.roleId,
       enabled: enabled !== null ? enabled : existing.enabled,
+      language: language || existing.language,
       nextReset: existing.nextReset,
     };
 
@@ -63,7 +73,7 @@ module.exports = {
     const roleMention = role ? role : (existing.roleId ? `<@&${existing.roleId}>` : "None");
 
     await interaction.reply({
-      content: `✅ Notification configuration updated!\nChannel: ${channelMention}\nRole: ${roleMention}\nEnabled: ${updated.enabled ? "Yes" : "No"}`,
+      content: `✅ Notification configuration updated!\nChannel: ${channelMention}\nRole: ${roleMention}\nEnabled: ${updated.enabled ? "Yes" : "No"}\nLanguage: ${updated.language}`,
       ephemeral: true,
     });
   },

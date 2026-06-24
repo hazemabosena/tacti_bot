@@ -26,11 +26,12 @@ module.exports = {
     const channelMention = config.channelId ? `<#${config.channelId}>` : "Not set";
     const roleMention = config.roleId ? `<@&${config.roleId}>` : "None";
     const enabledStatus = config.enabled ? "Yes" : "No";
+    const language = config.language || "English";
     const nextReset = new Date(config.nextReset);
     const formattedDate = formatResetDate(nextReset);
 
     await interaction.reply({
-      content: `**Clan Mission Notification Status**\n\nChannel: ${channelMention}\nRole: ${roleMention}\nEnabled: ${enabledStatus}\n\nNext Reset:\n${formattedDate}`,
+      content: `**Clan Mission Notification Status**\n\nChannel: ${channelMention}\nRole: ${roleMention}\nEnabled: ${enabledStatus}\nLanguage: ${language}\n\nNext Reset:\n${formattedDate}`,
       ephemeral: true,
     });
   },

@@ -1,10 +1,12 @@
 const { getGuildConfig, readData, getNextReset } = require("./clanMissionNotifier");
+const { languages } = require("./cmNotificationLanguages");
 
 let schedulerInterval = null;
 
 function buildNotificationMessage(config) {
   const roleMention = config.roleId ? `<@&${config.roleId}>` : "";
-  const message = `${roleMention ? roleMention + "\n" : ""}🔔 **Clan Missions Reset!**\n\nDon't forget to send your operators.\nGood luck, soldiers.`;
+  const lang = languages[config.language] || languages.English;
+  const message = `${roleMention ? roleMention + "\n" : ""}${lang.title}\n\n${lang.message}\n${lang.footer}`;
   return message;
 }
 

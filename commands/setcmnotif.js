@@ -4,6 +4,7 @@ const {
   setGuildConfig,
   getNextReset
 } = require("../utils/clanMissionNotifier");
+const { getLanguageChoices } = require("../utils/cmNotificationLanguages");
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -27,6 +28,13 @@ module.exports = {
         .setName("enabled")
         .setDescription("Enable or disable notifications")
         .setRequired(false)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("language")
+        .setDescription("Language for the notification message")
+        .setRequired(false)
+        .addChoices(getLanguageChoices())
     ),
 
   async execute(interaction) {
@@ -41,6 +49,7 @@ module.exports = {
     const channel = interaction.options.getChannel("channel");
     const role = interaction.options.getRole("role");
     const enabled = interaction.options.getBoolean("enabled") ?? true;
+    const language = interaction.options.getString("language") || "English";
 
     const nextReset = getNextReset();
 
@@ -49,6 +58,7 @@ module.exports = {
       channelId: channel.id,
       roleId: role ? role.id : null,
       enabled,
+      language,
       nextReset: nextReset.toISOString(),
     };
 
@@ -56,7 +66,7 @@ module.exports = {
 
     const roleMention = role ? `\nRole: ${role}` : "\nRole: None";
     await interaction.reply({
-      content: `✅ Clan Mission notification configured!\nChannel: ${channel}\n${roleMention}\nEnabled: ${enabled ? "Yes" : "No"}\nNext Reset: ${nextReset.toLocaleString("en-US", { timeZone: "Africa/Cairo" })}`,
+      content: `✅ Clan Mission notification configured!\nChannel: ${channel}\n${roleMention}\nEnabled: ${enabled ? "Yes" : "No"}\nLanguage: ${language}\nNext Reset: ${nextReset.toLocaleString("en-US", { timeZone: "Africa/Cairo" })}`,
       ephemeral: true,
     });
   },
