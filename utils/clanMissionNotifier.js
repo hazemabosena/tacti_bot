@@ -76,8 +76,10 @@ function setGuildConfig(guildId, config) {
 
 function deleteGuildConfig(guildId) {
   const data = readData();
+  const existed = !!data.guilds[guildId];
   delete data.guilds[guildId];
   writeData(data);
+  return existed;
 }
 
 module.exports = {
