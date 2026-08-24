@@ -15,7 +15,6 @@ if (!CLIENT_ID) {
   process.exit(1);
 }
 
-const toDelete = ['playerprofile', 'createcw', 'createaprofile', 'playerprofile ', 'createcw ', 'createaprofile '];
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
@@ -27,22 +26,20 @@ async function deleteCommands() {
     if (!GUILD_ID) {
       const globalCommands = await rest.get(Routes.applicationCommands(CLIENT_ID));
       for (const cmd of globalCommands) {
-        if (toDelete.includes(cmd.name)) {
-          await rest.delete(Routes.applicationCommand(CLIENT_ID, cmd.id));
-          console.log(`Deleted global command /${cmd.name}`);
-        }
+        await rest.delete(Routes.applicationCommand(CLIENT_ID, cmd.id));
+        console.log(`Deleted global command /${cmd.name}`);
       }
+      console.log(`Deleted ${globalCommands.length} global commands`);
     }
 
     // Delete guild-specific commands
     if (GUILD_ID) {
       const guildCommands = await rest.get(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID));
       for (const cmd of guildCommands) {
-        if (toDelete.includes(cmd.name)) {
-          await rest.delete(Routes.applicationGuildCommand(CLIENT_ID, GUILD_ID, cmd.id));
-          console.log(`Deleted guild command /${cmd.name}`);
-        }
+        await rest.delete(Routes.applicationGuildCommand(CLIENT_ID, GUILD_ID, cmd.id));
+        console.log(`Deleted guild command /${cmd.name}`);
       }
+      console.log(`Deleted ${guildCommands.length} guild commands`);
     }
 
     console.log('✅ Command deletion completed');
