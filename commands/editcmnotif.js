@@ -45,7 +45,17 @@ module.exports = {
       });
     }
 
-    const existing = getGuildConfig(guildId);
+    let existing;
+    try {
+      existing = await getGuildConfig(guildId);
+    } catch (error) {
+      console.error("[cm-notifications] Failed to load guild settings:", error?.name || "Error");
+      return interaction.reply({
+        content: "❌ Could not load the notification configuration. Please try again later.",
+        ephemeral: true,
+      });
+    }
+
     if (!existing) {
       return interaction.reply({
         content: "❌ No notification configuration found. Use `/setcmnotif` to create one first.",
@@ -67,7 +77,15 @@ module.exports = {
       nextReset: existing.nextReset,
     };
 
-    setGuildConfig(guildId, updated);
+    try {
+      await setGuildConfig(guildId, updated);
+    } catch (error) {
+      console.error("[cm-notifications] Failed to save guild settings:", error?.name || "Error");
+      return interaction.reply({
+        content: "❌ Could not save the notification configuration. Please try again later.",
+        ephemeral: true,
+      });
+    }
 
     const channelMention = channel ? channel : `<#${existing.channelId}>`;
     const roleMention = role ? role : (existing.roleId ? `<@&${existing.roleId}>` : "None");

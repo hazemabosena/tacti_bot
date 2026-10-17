@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, ChannelType } = require("discord.js");
 const {
-  getGuildConfig,
   setGuildConfig,
   getNextReset
 } = require("../utils/clanMissionNotifier");
@@ -62,7 +61,15 @@ module.exports = {
       nextReset: nextReset.toISOString(),
     };
 
-    setGuildConfig(guildId, config);
+    try {
+      await setGuildConfig(guildId, config);
+    } catch (error) {
+      console.error("[cm-notifications] Failed to save guild settings:", error?.name || "Error");
+      return interaction.reply({
+        content: "❌ Could not save the notification configuration. Please try again later.",
+        ephemeral: true,
+      });
+    }
 
     const roleMention = role ? `\nRole: ${role}` : "\nRole: None";
     await interaction.reply({

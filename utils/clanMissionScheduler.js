@@ -1,4 +1,8 @@
-const { getGuildConfig, readData, getNextReset } = require("./clanMissionNotifier");
+const {
+  getAllGuildConfigs,
+  updateGuildNextReset,
+  getNextReset
+} = require("./clanMissionNotifier");
 const { languages } = require("./cmNotificationLanguages");
 
 let schedulerInterval = null;
@@ -32,47 +36,19 @@ async function sendNotification(client, guildId, config) {
   }
 }
 
-function updateNextReset(config) {
-  const currentNext = new Date(config.nextReset);
-  const now = new Date();
-  if (now >= currentNext) {
-    const next = getNextReset(now);
-    config.nextReset = next.toISOString();
-    return true;
-  }
-  return false;
-}
-
 async function checkAndSendNotifications(client) {
-  const data = readData();
+  const configs = await getAllGuildConfigs();
   const now = new Date();
 
-  for (const [guildId, config] of Object.entries(data.guilds)) {
+  for (const config of configs) {
     if (!config || !config.enabled) continue;
 
     const nextReset = new Date(config.nextReset);
     if (now >= nextReset) {
-      await sendNotification(client, guildId, config);
-      updateNextReset(config);
+      await sendNotification(client, config.guildId, config);
+      const next = getNextReset(now).toISOString();
+      await updateGuildNextReset(config.guildId, next);
     }
-  }
-
-  // Save updated nextReset times
-  const updatedData = readData();
-  let changed = false;
-  for (const [guildId, config] of Object.entries(updatedData.guilds)) {
-    if (config && config.enabled) {
-      const nextReset = new Date(config.nextReset);
-      if (now >= nextReset) {
-        const newNext = getNextReset(now);
-        updatedData.guilds[guildId].nextReset = newNext.toISOString();
-        changed = true;
-      }
-    }
-  }
-  if (changed) {
-    const { writeData } = require("./clanMissionNotifier");
-    writeData(updatedData);
   }
 }
 

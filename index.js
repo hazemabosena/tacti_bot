@@ -9,6 +9,8 @@ const fs = require("fs");
 const path = require("path");
 const express = require("express");
 require("dotenv").config();
+const { connectToDatabase, disconnectFromDatabase, getMongoStatus } = require("./db");
+const { createDiscordOAuthRouter } = require("./web/discordOAuth");
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
 
@@ -112,24 +114,127 @@ if (!DISCORD_TOKEN) {
 // === Express Web Server Setup ===
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HEARTBEAT_INTERVAL_MS = 30_000;
+let discordWebRouter = null;
+
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
+const heartbeatInterval = setInterval(() => {
+  const status = client.isReady() ? `online as ${client.user.tag}` : "connecting";
+  console.log(`[heartbeat] Bot ${status} | uptime ${Math.floor(process.uptime())}s`);
+}, HEARTBEAT_INTERVAL_MS);
+
+app.use((req, res, next) => {
+  res.set({
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+  });
+  next();
+});
 
 app.use(express.static(path.join(__dirname, "public")));
 
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+app.get("/health", async (req, res) => {
+  const mongo = getMongoStatus();
+  res.status(200).json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    database: mongo.configured ? (mongo.connected ? "connected" : "disconnected") : "not_configured",
+  });
+});
+
+app.get("/health/db", async (req, res) => {
+  const mongo = getMongoStatus();
+  const statusCode = mongo.connected ? 200 : 503;
+  res.status(statusCode).json({
+    status: mongo.connected ? "ok" : "unavailable",
+    configured: mongo.configured,
+    connected: mongo.connected,
+    database: mongo.database || null,
+  });
 });
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/auth/") && !req.path.startsWith("/api/")) return next();
+  if (!discordWebRouter) {
+    return res.status(503).json({ error: "The website database service is unavailable." });
+  }
+  return discordWebRouter(req, res, next);
+});
+
 app.use((req, res) => {
   res.status(404).json({ error: "Not Found" });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🌐 running on http://localhost:${PORT}`);
 });
+let shutdownPromise = null;
+
+function shutdown(signal) {
+  if (shutdownPromise) return shutdownPromise;
+
+  shutdownPromise = (async () => {
+    let failed = false;
+    clearInterval(heartbeatInterval);
+
+    try {
+      require("./utils/clanMissionScheduler").stopScheduler();
+    } catch (error) {
+      console.error(`[shutdown] Scheduler cleanup failed (${error?.name || "Error"}).`);
+      failed = true;
+    }
+
+    try {
+      await new Promise((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    } catch (error) {
+      console.error(`[shutdown] HTTP server cleanup failed (${error?.name || "Error"}).`);
+      failed = true;
+    }
+
+    try {
+      await client.destroy();
+    } catch (error) {
+      console.error(`[shutdown] Discord client cleanup failed (${error?.name || "Error"}).`);
+      failed = true;
+    }
+
+    try {
+      await disconnectFromDatabase();
+    } catch (error) {
+      console.error(`[shutdown] MongoDB cleanup failed (${error?.name || "Error"}).`);
+      failed = true;
+    }
+
+    console.log(`[shutdown] Cleanup finished after ${signal}.`);
+    if (failed) process.exitCode = 1;
+  })();
+
+  return shutdownPromise;
+}
+
+(async () => {
+  try {
+    const result = await connectToDatabase();
+    discordWebRouter = createDiscordOAuthRouter(result);
+    console.log("[mongodb] Website database routes are ready.");
+  } catch (error) {
+    const reason = process.env.MONGODB_URI
+      ? `Startup connection check failed (${error?.name || "Error"}).`
+      : "Startup connection check failed: MONGODB_URI is not configured.";
+    console.error(`[mongodb] ${reason}`);
+  }
+})();
 
 client.on("interactionCreate", async (interaction) => {
   try {
@@ -158,20 +263,18 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-process.on("SIGINT", async () => {
-  try {
-    await client.destroy();
-  } finally {
-    process.exit(0);
-  }
+process.on("SIGINT", () => {
+  shutdown("SIGINT").catch((error) => {
+    console.error(`[shutdown] SIGINT cleanup failed (${error?.name || "Error"}).`);
+    process.exitCode = 1;
+  });
 });
 
-process.on("SIGTERM", async () => {
-  try {
-    await client.destroy();
-  } finally {
-    process.exit(0);
-  }
+process.on("SIGTERM", () => {
+  shutdown("SIGTERM").catch((error) => {
+    console.error(`[shutdown] SIGTERM cleanup failed (${error?.name || "Error"}).`);
+    process.exitCode = 1;
+  });
 });
 
 // Register commands from both local commands folder and moved TACTIAPI folder (if present)
@@ -191,6 +294,3 @@ try {
 }
 
 client.login(DISCORD_TOKEN);
-
-
-

@@ -1,30 +1,41 @@
-const fs = require("fs");
 const path = require("path");
+const { connectToDatabase } = require("../db");
+const { migrateLegacySettings } = require("./migrateClanMissionSettings");
 
-const DATA_FILE = path.resolve(__dirname, "..", "data", "clanMissionNotifications.json");
+const SETTINGS_COLLECTION = "cm_notification_settings";
+const LEGACY_DATA_FILE = path.resolve(__dirname, "..", "data", "clanMissionNotifications.json");
+let legacyMigrationPromise = null;
 
-function ensureDataFile() {
-  const dir = path.dirname(DATA_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ guilds: {} }, null, 2));
+async function getSettingsCollection() {
+  const connection = await connectToDatabase();
+  if (!connection.connected || !connection.db) {
+    throw new Error("MongoDB is unavailable for clan mission notification settings.");
   }
+
+  const collection = connection.db.collection(SETTINGS_COLLECTION);
+  await ensureLegacyMigration(collection);
+  return collection;
 }
 
-function readData() {
-  ensureDataFile();
-  try {
-    const raw = fs.readFileSync(DATA_FILE, "utf-8");
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error("Failed to read clan mission notification data:", err);
-    return { guilds: {} };
-  }
+async function ensureLegacyMigration(collection) {
+  if (legacyMigrationPromise) return legacyMigrationPromise;
+
+  legacyMigrationPromise = (async () => {
+    const migratedCount = await migrateLegacySettings(collection, LEGACY_DATA_FILE);
+
+    console.log(`[cm-notifications] Verified ${migratedCount} legacy guild setting(s); the JSON file was preserved.`);
+  })().catch((error) => {
+    legacyMigrationPromise = null;
+    throw error;
+  });
+
+  return legacyMigrationPromise;
 }
 
-function writeData(data) {
-  ensureDataFile();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+function withoutMongoId(document) {
+  if (!document) return null;
+  const { _id, ...config } = document;
+  return config;
 }
 
 // Starting reset: Friday, June 26, 2026 06:00 AM Cairo Time (UTC+3)
@@ -63,33 +74,67 @@ function formatResetDate(nextReset) {
   });
 }
 
-function getGuildConfig(guildId) {
-  const data = readData();
-  return data.guilds[guildId] || null;
+async function getGuildConfig(guildId) {
+  const collection = await getSettingsCollection();
+  const document = await collection.findOne({ _id: String(guildId) });
+  return withoutMongoId(document);
 }
 
-function setGuildConfig(guildId, config) {
-  const data = readData();
-  data.guilds[guildId] = config;
-  writeData(data);
+async function getAllGuildConfigs() {
+  const collection = await getSettingsCollection();
+  const documents = await collection.find({}).toArray();
+  return documents.map(withoutMongoId);
 }
 
-function deleteGuildConfig(guildId) {
-  const data = readData();
-  const existed = !!data.guilds[guildId];
-  delete data.guilds[guildId];
-  writeData(data);
-  return existed;
+async function setGuildConfig(guildId, config) {
+  const collection = await getSettingsCollection();
+  const normalizedGuildId = String(guildId);
+  const document = {
+    ...config,
+    guildId: normalizedGuildId,
+    channelId: String(config.channelId),
+    roleId: config.roleId == null ? null : String(config.roleId),
+  };
+  const result = await collection.updateOne(
+    { _id: normalizedGuildId },
+    { $set: document },
+    { upsert: true }
+  );
+
+  if (!result.acknowledged || (result.matchedCount !== 1 && result.upsertedCount !== 1)) {
+    throw new Error("MongoDB did not confirm saving clan mission notification settings.");
+  }
+}
+
+async function updateGuildNextReset(guildId, nextReset) {
+  const collection = await getSettingsCollection();
+  const result = await collection.updateOne(
+    { _id: String(guildId) },
+    { $set: { nextReset } }
+  );
+
+  if (!result.acknowledged || result.matchedCount !== 1) {
+    throw new Error("MongoDB did not confirm updating the next clan mission reset.");
+  }
+}
+
+async function deleteGuildConfig(guildId) {
+  const collection = await getSettingsCollection();
+  const result = await collection.deleteOne({ _id: String(guildId) });
+  if (!result.acknowledged) {
+    throw new Error("MongoDB did not confirm deleting clan mission notification settings.");
+  }
+  return result.deletedCount === 1;
 }
 
 module.exports = {
-  readData,
-  writeData,
   getNextReset,
   getTimeRemaining,
   formatResetDate,
   getGuildConfig,
+  getAllGuildConfigs,
   setGuildConfig,
+  updateGuildNextReset,
   deleteGuildConfig,
   START_DATE,
   RESET_INTERVAL_MS

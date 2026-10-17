@@ -15,7 +15,17 @@ module.exports = {
       });
     }
 
-    const config = getGuildConfig(guildId);
+    let config;
+    try {
+      config = await getGuildConfig(guildId);
+    } catch (error) {
+      console.error("[cm-notifications] Failed to load guild settings:", error?.name || "Error");
+      return interaction.reply({
+        content: "❌ Could not load the notification configuration. Please try again later.",
+        ephemeral: true,
+      });
+    }
+
     if (!config) {
       return interaction.reply({
         content: "❌ No notification configuration found. Use `/setcmnotif` to create one.",

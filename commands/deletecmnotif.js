@@ -15,7 +15,17 @@ module.exports = {
       });
     }
 
-    const existing = deleteGuildConfig(guildId);
+    let existing;
+    try {
+      existing = await deleteGuildConfig(guildId);
+    } catch (error) {
+      console.error("[cm-notifications] Failed to delete guild settings:", error?.name || "Error");
+      return interaction.reply({
+        content: "❌ Could not delete the notification configuration. Please try again later.",
+        ephemeral: true,
+      });
+    }
+
     if (!existing) {
       return interaction.reply({
         content: "❌ No notification configuration found to delete.",
