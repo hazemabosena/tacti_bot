@@ -34,7 +34,7 @@ async function ensureLegacyMigration(collection) {
 
 function withoutMongoId(document) {
   if (!document) return null;
-  const { _id, ...config } = document;
+  const { _id, notificationClaim, ...config } = document;
   return config;
 }
 
@@ -118,6 +118,63 @@ async function updateGuildNextReset(guildId, nextReset) {
   }
 }
 
+async function claimGuildNotification(guildId, expectedNextReset, token, now, leaseMs) {
+  const collection = await getSettingsCollection();
+  const claim = {
+    token,
+    claimedAt: now,
+    expiresAt: new Date(now.getTime() + leaseMs),
+  };
+  const result = await collection.findOneAndUpdate(
+    {
+      _id: String(guildId),
+      enabled: true,
+      nextReset: expectedNextReset,
+      $or: [
+        { notificationClaim: { $exists: false } },
+        { "notificationClaim.expiresAt": { $lte: now } },
+      ],
+    },
+    { $set: { notificationClaim: claim } },
+    { returnDocument: "after" }
+  );
+
+  return Boolean(result);
+}
+
+async function completeGuildNotification(guildId, expectedNextReset, token, nextReset) {
+  const collection = await getSettingsCollection();
+  const result = await collection.updateOne(
+    {
+      _id: String(guildId),
+      nextReset: expectedNextReset,
+      "notificationClaim.token": token,
+    },
+    {
+      $set: { nextReset },
+      $unset: { notificationClaim: "" },
+    }
+  );
+
+  if (!result.acknowledged) {
+    throw new Error("MongoDB did not confirm completing the clan mission notification.");
+  }
+  return result.matchedCount === 1;
+}
+
+async function releaseGuildNotificationClaim(guildId, token) {
+  const collection = await getSettingsCollection();
+  const result = await collection.updateOne(
+    { _id: String(guildId), "notificationClaim.token": token },
+    { $unset: { notificationClaim: "" } }
+  );
+
+  if (!result.acknowledged) {
+    throw new Error("MongoDB did not confirm releasing the clan mission notification claim.");
+  }
+  return result.matchedCount === 1;
+}
+
 async function deleteGuildConfig(guildId) {
   const collection = await getSettingsCollection();
   const result = await collection.deleteOne({ _id: String(guildId) });
@@ -135,6 +192,9 @@ module.exports = {
   getAllGuildConfigs,
   setGuildConfig,
   updateGuildNextReset,
+  claimGuildNotification,
+  completeGuildNotification,
+  releaseGuildNotificationClaim,
   deleteGuildConfig,
   START_DATE,
   RESET_INTERVAL_MS

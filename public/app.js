@@ -1,7 +1,15 @@
 const elements = {
   loading: document.querySelector("#loading-state"),
+  authNotice: document.querySelector("#auth-notice"),
   login: document.querySelector("#login-state"),
   loginError: document.querySelector("#login-error"),
+  connectDiscord: document.querySelector("#connect-discord-state"),
+  connectDiscordCopy: document.querySelector("#connected-account-copy"),
+  connectDiscordButton: document.querySelector("#connect-discord-button"),
+  connectError: document.querySelector("#connect-error"),
+  accountLogout: document.querySelector("#account-logout-button"),
+  googleButton: document.querySelector("#google-button"),
+  googleLabel: document.querySelector("#google-label"),
   dashboard: document.querySelector("#dashboard"),
   empty: document.querySelector("#empty-state"),
   guildSelect: document.querySelector("#guild-select"),
@@ -37,6 +45,28 @@ function show(element, visible) {
 function setFeedback(message, kind) {
   elements.feedback.textContent = message;
   elements.feedback.className = `feedback feedback-${kind}`;
+}
+
+function showAuthError(message) {
+  elements.loginError.textContent = message;
+  show(elements.loginError, true);
+}
+
+async function loadProviderStatus() {
+  try {
+    const providers = await requestJson("/auth/providers");
+    elements.googleButton.disabled = !providers.google;
+    elements.googleLabel.textContent = providers.google
+      ? "Continue with Google"
+      : "Google sign-in is not configured";
+    if (providers.google) {
+      elements.googleButton.setAttribute("aria-label", "Continue with Google");
+    } else {
+      elements.googleButton.setAttribute("aria-label", "Google sign-in is not configured");
+    }
+  } catch (error) {
+    showAuthError(error.message || "Sign-in options could not be loaded.");
+  }
 }
 
 async function requestJson(url, options) {
@@ -128,9 +158,40 @@ function setGuildOptions(guilds) {
 }
 
 async function initializeDashboard() {
+  const authError = new URLSearchParams(window.location.search).get("auth_error");
+  if (authError) window.history.replaceState(null, "", window.location.pathname);
+  if (authError === "google_account_conflict") {
+    elements.authNotice.textContent =
+      "A website account already uses that Google email. No accounts were linked; contact the site administrator to resolve the conflict.";
+    show(elements.authNotice, true);
+  }
+
   try {
-    const [{ user }, { guilds }, { languages }] = await Promise.all([
-      requestJson("/api/me"),
+    const { user, account } = await requestJson("/api/me");
+    if (!user) {
+      if (account) {
+        const providers = await requestJson("/auth/providers");
+        elements.connectDiscordCopy.textContent = providers.discord
+          ? `Your website account (${account.email}) is ready. Connect Discord to verify server access and manage notifications.`
+          : `Your website account (${account.email}) is ready. Google sign-in is active, and Discord can be connected later when the site is configured.`;
+        show(elements.connectDiscord, true);
+        if (!providers.discord) {
+          elements.connectDiscordButton.removeAttribute("href");
+          elements.connectDiscordButton.setAttribute("aria-disabled", "true");
+          elements.connectDiscordButton.textContent = "Connect Discord";
+          elements.connectDiscordButton.title = "Discord sign-in is not configured for this website";
+        } else {
+          elements.connectDiscordButton.textContent = "Connect Discord";
+          elements.connectDiscordButton.removeAttribute("title");
+        }
+      } else {
+        show(elements.login, true);
+        await loadProviderStatus();
+      }
+      return;
+    }
+
+    const [{ guilds }, { languages }] = await Promise.all([
       requestJson("/api/guilds"),
       requestJson("/api/languages"),
     ]);
@@ -149,15 +210,34 @@ async function initializeDashboard() {
   } catch (error) {
     if (error.status === 401) {
       show(elements.login, true);
+      await loadProviderStatus();
       return;
     }
     show(elements.login, true);
-    elements.loginError.textContent = error.message || "The dashboard could not connect to its server.";
-    show(elements.loginError, true);
+    await loadProviderStatus();
+    if (!elements.loginError.textContent) {
+      showAuthError(error.message || "The dashboard could not connect to its server.");
+    }
   } finally {
     show(elements.loading, false);
   }
 }
+
+elements.googleButton.addEventListener("click", () => {
+  if (!elements.googleButton.disabled) window.location.assign("/auth/google");
+});
+
+elements.accountLogout.addEventListener("click", async () => {
+  elements.accountLogout.disabled = true;
+  try {
+    await requestJson("/auth/logout", { method: "POST" });
+    window.location.reload();
+  } catch (error) {
+    elements.connectError.textContent = error.message || "Could not sign out.";
+    show(elements.connectError, true);
+    elements.accountLogout.disabled = false;
+  }
+});
 
 elements.guildSelect.addEventListener("change", () => {
   loadGuildSettings(elements.guildSelect.value);

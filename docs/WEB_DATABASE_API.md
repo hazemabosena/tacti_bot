@@ -4,11 +4,17 @@ The Discord bot and same-origin website share the `TACTIOPBOT` MongoDB database 
 
 ## Local setup
 
-1. Install Node.js 18 or newer and run `npm ci`.
+1. Install Node.js 20.8 or newer and run `npm ci`.
 2. Copy `.env.example` to `.env` and fill in local values. Never commit `.env`.
 3. Add the local OAuth callback to the Discord Developer Portal and configure the website variables below.
 4. Run `npm start`. The bot and website run in the same process on `PORT` (default `3000`).
 5. Run `npm run test` for the offline test suite and `npm run test:db` to ping Atlas and verify migration.
+
+## Website-only local OAuth testing
+
+Use `npm run dev:web` to serve the existing website and authentication routes on `127.0.0.1` without starting the Discord client or notification scheduler. This launcher requires `TACTIOBOT_DEV_MONGODB_URI` and a `TACTIOBOT_DEV_MONGODB_DB_NAME` beginning with `TACTIOPBOT_DEV_`; it rejects a development URI identical to `MONGODB_URI` and selects only the explicitly named development database. Use a local MongoDB instance or a separate development cluster. Do not point it at production. Account records and server-side sessions created in this mode persist only in the selected development database. Dashboard guild APIs and Discord OAuth are disabled in this server.
+
+For Google testing, set `TACTIOBOT_DEV_GOOGLE_OAUTH_ENABLED=true`, configure `TACTIOBOT_DEV_GOOGLE_CLIENT_ID` and `TACTIOBOT_DEV_GOOGLE_CLIENT_SECRET`, and register `http://localhost:3000/auth/google/callback` as an authorized redirect URI in Google Cloud Console. Set `TACTIOBOT_DEV_GOOGLE_OAUTH_REDIRECT_URI` to that exact URI. If using another `TACTIOBOT_DEV_PORT`, update both the callback URI and Google Cloud registration to that port. Development credentials and the enable flag are isolated from the production `GOOGLE_*` variables. Without the explicit development flag and callback, Google sign-in remains disabled. Start only after reviewing these development settings, then open `http://localhost:3000/`; stop with Ctrl+C. The launcher never prints connection URIs or credentials.
 
 ## Environment variables
 
@@ -19,7 +25,10 @@ Configure variables in the environment of each running service; a local `.env` f
 - `CLIENT_SECRET`: Discord application secret for the server-side OAuth token exchange.
 - `MONGODB_URI`: MongoDB Atlas URI. Atlas network access and a database user with read/write access are required. The application explicitly selects database `TACTIOPBOT`, regardless of a database name in the URI.
 - `PORT`: HTTP listen port, supplied by most deployment platforms.
-- `DISCORD_OAUTH_REDIRECT_URI`: exact Discord-registered callback URL ending `/auth/discord/callback`.
+- `DISCORD_OAUTH_REDIRECT_URI`: exact Discord-registered callback URL ending `/auth/discord/callback`; Discord is linked only after Google sign-in.
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`: Google OAuth web-client credentials; keep both server-side.
+- `GOOGLE_OAUTH_REDIRECT_URI`: exact Google-registered HTTPS callback ending `/auth/google/callback` in production.
+- `GOOGLE_OAUTH_ENABLED=true`: enable the Google button only after the credentials and exact callback URL have been configured in Google Cloud Console. Without this explicit flag, Google sign-in remains unavailable.
 - `WEB_SESSION_SECRET`: random secret of at least 32 characters; generate with `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
 - `NODE_ENV=production`: enables secure session cookies and requires an HTTPS OAuth callback.
 - `GUILD_ID`: optional development guild for command registration.
@@ -29,9 +38,11 @@ Do not put any real secret in `.env.example`, source files, or frontend assets.
 
 ## Discord OAuth and deployment
 
-In the Discord Developer Portal, configure the application ID and secret and add the exact `DISCORD_OAUTH_REDIRECT_URI`. The website requests only the `identify` and `guilds` scopes. For local development a callback may be `http://localhost:3000/auth/discord/callback`; production callbacks must use HTTPS.
+In the Discord Developer Portal, configure the application ID and secret and add the exact `DISCORD_OAUTH_REDIRECT_URI`. The website requests only the `identify` and `guilds` scopes. For local development a callback may be `http://localhost:3000/auth/discord/callback`; after Deploy Hatch assigns your hostname, set the production URI to `https://<your-deploy-hatch-hostname>/auth/discord/callback` in both the service environment and Discord's registered redirect URLs.
 
-The [Procfile](../Procfile) starts the existing combined bot-and-web process with `npm start`; the package requires Node.js 18 or newer. In Deploy Hatch, configure the variables above in the service's environment settings, use the existing Procfile/start command, and set `NODE_ENV=production`. Add the production callback URL to the Discord application. Allow the deployment host in Atlas Network Access and use a least-privilege database user.
+Google is the only website sign-in method. Create a Google OAuth web client and register the exact callback URI `http://localhost:3000/auth/google/callback` for local development or `https://<your-deploy-hatch-hostname>/auth/google/callback` after deployment. Set `GOOGLE_OAUTH_REDIRECT_URI` to the exact production URI and add that same URI in Google Cloud Console. Configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WEB_SESSION_SECRET` (at least 32 characters), and `GOOGLE_OAUTH_ENABLED=true` on the server. The application validates OAuth state, nonce, PKCE, the ID-token signature/audience, and Google's verified-email claim. It does not enable sign-in when configuration is partial. The browser displays Google sign-in as unavailable until the complete configuration is present. Do not put Google credentials in frontend code.
+
+The [Procfile](../Procfile) starts the existing combined bot-and-web process with `npm start`; the package requires Node.js 20.8 or newer to satisfy `connect-mongo` 6. In Deploy Hatch, configure the variables above in the service's environment settings, use the existing Procfile/start command, and set `NODE_ENV=production`. Add the production callback URL to the Discord application. Allow the deployment host in Atlas Network Access and use a least-privilege database user.
 
 The supported topology is a same-origin website and API, usually behind one reverse proxy. The server trusts one proxy hop in production for secure cookies. CORS is intentionally not enabled. If the frontend is deployed on a separate origin, place it behind a same-origin reverse proxy rather than broadening CORS or weakening cookie policy. A cross-site deployment would require a separately reviewed origin allowlist, credentialed CORS, and `SameSite=None; Secure` cookies.
 
@@ -39,12 +50,15 @@ The current `npm start`/Procfile runs the bot, API, and frontend together. If th
 
 ## Website and API
 
-OAuth access and refresh tokens and session IDs are stored server-side in MongoDB, never returned to browser JavaScript. Session cookies are HTTP-only, SameSite=Lax, and Secure in production. Authentication endpoints and API requests are rate-limited. Writes require a same-origin `Origin` header, an authenticated session, and a live Discord permission check for the requested server. Users must have Manage Server or Administrator permission, and the bot must be a member of the server.
+OAuth access and refresh tokens and session IDs are stored server-side in MongoDB, never returned to browser JavaScript. Session cookies are HTTP-only, SameSite=Lax, and Secure in production. Authentication endpoints and API requests are rate-limited. A verified Google identity is required for all website sessions. Discord is optional for general website access; connecting it links the authenticated Google account to one Discord account. Discord-specific APIs require both identities, a valid Discord connection, live Manage Server or Administrator permission, and bot membership in the selected server. Google sign-in never silently merges with an existing account that has a conflicting email.
 
-- `GET /auth/discord`: begin login with a cryptographically random OAuth state.
-- `GET /auth/discord/callback`: validate state, exchange the code, and create a MongoDB-backed session.
+- `GET /auth/discord`: begin connecting Discord to the currently authenticated Google account using a cryptographically random OAuth state.
+- `GET /auth/discord/callback`: validate state, exchange the code, and link the Discord identity to that same Google-backed account.
+- `GET /auth/providers`: report which provider configurations are ready, without exposing credentials.
+- `GET /auth/google` and `GET /auth/google/callback`: begin and complete Google sign-in when explicitly enabled and fully configured.
+- `GET /auth/discord`: connect Discord to the current website account; the callback checks the account and Discord identities are not already linked elsewhere.
 - `POST /auth/logout`: end the session; same-origin only.
-- `GET /api/me`: current signed-in Discord user.
+- `GET /api/me`: current Google website account and, when connected, Discord user.
 - `GET /api/languages`: supported notification languages.
 - `GET /api/guilds`: manageable Discord servers and current settings.
 - `GET /api/guilds/:guildId/resources`: text channels where the bot can send messages and selectable server roles.
@@ -58,6 +72,7 @@ The backend verifies submitted channel and role IDs against the selected Discord
 
 - `cm_notification_settings`: one document per guild; the Discord guild ID is the document `_id`, which MongoDB uniquely indexes automatically. The `guildId` field matches `_id` for use by the bot and API.
 - `web_sessions`: server-side website sessions, including OAuth tokens. `connect-mongo` manages the TTL index and expires sessions after eight hours.
+- `web_accounts`: Google website accounts and optional linked Discord IDs. The application creates unique indexes for normalized email, Google subject, and linked Discord ID when the first account operation occurs.
 
 `npm run test:db` pings the explicitly selected database and lists the number of notification settings after migration verification. The settings collection uses MongoDB's built-in unique `_id` index; no separate index is required for its key lookup.
 
@@ -69,7 +84,7 @@ Keep the JSON file as the rollback source until an operator has independently ch
 
 ## Checks and troubleshooting
 
-- `npm test`: offline migration, data-access, scheduler, command-schema, OAuth state, guild authorization, CSRF, and optional-configuration tests.
+- `npm test`: offline migration, data-access, scheduler, command-schema, Google/Discord OAuth, account-linking, CSRF, and provider-configuration tests.
 - `npm run test:db`: live Atlas ping plus legacy import/read-back verification. It performs reads and safe idempotent imports; it does not delete production records.
 - `GET /health/db`: reports connection status without returning credentials.
 

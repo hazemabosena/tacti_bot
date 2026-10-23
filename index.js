@@ -226,7 +226,7 @@ function shutdown(signal) {
 (async () => {
   try {
     const result = await connectToDatabase();
-    discordWebRouter = createDiscordOAuthRouter(result);
+    discordWebRouter = createDiscordOAuthRouter({ ...result, discordClient: client });
     console.log("[mongodb] Website database routes are ready.");
   } catch (error) {
     const reason = process.env.MONGODB_URI

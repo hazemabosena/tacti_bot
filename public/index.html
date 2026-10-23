@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#101719">
+    <meta name="theme-color" content="#0b1425">
     <title>TACTIOPBOT | Clan Mission Dashboard</title>
     <link rel="stylesheet" href="/styles.css">
     <script src="/app.js" defer></script>
@@ -24,9 +24,11 @@
       <main>
         <section class="hero">
           <p class="eyebrow">SERVER CONTROL CENTER</p>
-          <h1>Clan mission reminders</h1>
+          <h1>Your clan missions, under control.</h1>
           <p class="hero-copy">Manage reset notifications for the Discord servers where you have permission.</p>
         </section>
+
+        <p id="auth-notice" class="feedback feedback-error hidden" role="alert"></p>
 
         <section id="loading-state" class="state-card" aria-live="polite">
           <span class="loader" aria-hidden="true"></span>
@@ -34,11 +36,34 @@
         </section>
 
         <section id="login-state" class="state-card hidden">
-          <div class="state-icon" aria-hidden="true">↗</div>
-          <h2>Connect your Discord account</h2>
-          <p>Sign in to see servers you can manage. Your database credentials are never sent to this page.</p>
-          <a id="login-button" class="button button-primary" href="/auth/discord">Continue with Discord</a>
-          <p id="login-error" class="feedback feedback-error hidden" role="alert"></p>
+          <div class="auth-card">
+            <div class="auth-intro">
+              <p class="eyebrow">TACTIOPBOT ACCOUNT</p>
+              <h2>Sign in with Google</h2>
+              <p>Use your Google account to access the clan mission dashboard.</p>
+            </div>
+
+            <p id="login-error" class="feedback feedback-error hidden" role="alert"></p>
+            <div class="auth-providers">
+              <button id="google-button" class="button button-provider" type="button" disabled>
+                <span class="provider-mark provider-google" aria-hidden="true">G</span>
+                <span id="google-label">Google sign-in is not configured</span>
+              </button>
+            </div>
+            <p class="auth-note">Discord is connected separately after Google sign-in and is only needed for server settings.</p>
+          </div>
+        </section>
+
+        <section id="connect-discord-state" class="state-card hidden">
+          <div class="auth-card connect-card">
+            <div class="state-icon" aria-hidden="true">↗</div>
+            <p class="eyebrow">ONE LAST STEP</p>
+            <h2>Connect your Discord account</h2>
+            <p id="connected-account-copy">Your website account is ready. Connect Discord when you want to manage server notifications and permissions.</p>
+            <a id="connect-discord-button" class="button button-primary" href="/auth/discord?link=1">Connect Discord</a>
+            <button id="account-logout-button" class="button button-quiet" type="button">Sign out</button>
+            <p id="connect-error" class="feedback feedback-error hidden" role="alert"></p>
+          </div>
         </section>
 
         <section id="dashboard" class="dashboard hidden">

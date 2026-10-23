@@ -1,9 +1,11 @@
 const crypto = require("crypto");
 const express = require("express");
 const session = require("express-session");
-const MongoStore = require("connect-mongo");
+const { OAuth2Client } = require("google-auth-library");
+const { MongoStore } = require("connect-mongo");
 const { rateLimit } = require("express-rate-limit");
 const { ChannelType, PermissionsBitField } = require("discord.js");
+const { ObjectId } = require("mongodb");
 const {
   getGuildConfig,
   getNextReset,
@@ -37,9 +39,10 @@ const apiRateLimit = rateLimit({
   message: { error: "Too many requests. Please try again shortly." },
 });
 
-function httpError(status, message) {
+function httpError(status, message, code) {
   const error = new Error(message);
   error.status = status;
+  if (code) error.code = code;
   return error;
 }
 
@@ -65,31 +68,70 @@ function isDiscordSnowflake(value) {
   return typeof value === "string" && /^\d{17,20}$/.test(value);
 }
 
-function createDiscordOAuthRouter({ client, db }) {
+function getRedirectOrigin(value, isProduction) {
+  try {
+    const url = new URL(value);
+    if (url.username || url.password || (isProduction && url.protocol !== "https:")) return null;
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function isCallbackUri(value, pathname, isProduction) {
+  if (!getRedirectOrigin(value, isProduction)) return false;
+  const url = new URL(value);
+  return url.pathname === pathname && !url.search && !url.hash;
+}
+
+function createDiscordOAuthRouter({
+  client: mongoClient,
+  db,
+  discordClient,
+  websiteOnly = false,
+  googleRedirectUriOverride,
+}) {
   const router = express.Router();
   const redirectUri = process.env.DISCORD_OAUTH_REDIRECT_URI;
   const sessionSecret = process.env.WEB_SESSION_SECRET;
   const isProduction = process.env.NODE_ENV === "production";
-  let redirectOrigin;
-
-  try {
-    const redirectUrl = new URL(redirectUri);
-    if (isProduction && redirectUrl.protocol !== "https:") {
-      throw new Error("HTTPS is required for the OAuth callback in production.");
-    }
-    redirectOrigin = redirectUrl.origin;
-  } catch {
-    redirectOrigin = null;
-  }
-
-  const configurationIsValid =
-    Boolean(process.env.CLIENT_ID) &&
-    Boolean(process.env.CLIENT_SECRET) &&
+  const redirectOrigin = getRedirectOrigin(redirectUri, isProduction);
+  const discordConfigurationIsValid =
+    !websiteOnly &&
+    hasConfiguredValue(process.env.CLIENT_ID) &&
+    hasConfiguredValue(process.env.CLIENT_SECRET) &&
     Boolean(redirectOrigin) &&
+    isCallbackUri(redirectUri, "/auth/discord/callback", isProduction) &&
+    typeof sessionSecret === "string";
+  const googleRedirectUri = googleRedirectUriOverride || process.env.GOOGLE_OAUTH_REDIRECT_URI;
+  const googleRedirectOrigin = getRedirectOrigin(googleRedirectUri, isProduction);
+  const hasGoogleCredentials =
+    hasConfiguredValue(process.env.GOOGLE_CLIENT_ID) &&
+    hasConfiguredValue(process.env.GOOGLE_CLIENT_SECRET);
+  const googleConfigurationIsValid =
+    process.env.GOOGLE_OAUTH_ENABLED === "true" &&
+    hasGoogleCredentials &&
+    hasConfiguredValue(googleRedirectUri) &&
+    Boolean(googleRedirectOrigin) &&
+    isCallbackUri(googleRedirectUri, "/auth/google/callback", isProduction) &&
     typeof sessionSecret === "string" &&
     sessionSecret.length >= 32;
+  const googleOAuthClient = googleConfigurationIsValid
+    ? new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      googleRedirectUri
+    )
+    : null;
+  const sessionConfigurationIsValid =
+    Boolean(mongoClient) &&
+    Boolean(db) &&
+    typeof sessionSecret === "string" &&
+    sessionSecret.length >= 32;
+  let accountIndexesPromise = null;
 
-  if (!configurationIsValid) {
+  if (!sessionConfigurationIsValid) {
     router.use((req, res) => {
       res.set("Cache-Control", "no-store");
       res.status(503).json({ error: "Website authentication is not configured." });
@@ -102,7 +144,7 @@ function createDiscordOAuthRouter({ client, db }) {
       name: "tactiobot.sid",
       secret: sessionSecret,
       store: MongoStore.create({
-        client,
+        client: mongoClient,
         dbName: db.databaseName,
         collectionName: "web_sessions",
         ttl: SESSION_MAX_AGE_MS / 1000,
@@ -126,12 +168,221 @@ function createDiscordOAuthRouter({ client, db }) {
   });
 
   router.use("/api", apiRateLimit);
+  router.use("/auth", express.json({ limit: "8kb" }));
+
+  router.get("/auth/providers", (req, res) => {
+    res.json({
+      discord: discordConfigurationIsValid,
+      google: googleConfigurationIsValid,
+    });
+  });
+
+  async function ensureAccountIndexes() {
+    if (!accountIndexesPromise) {
+      const accounts = db.collection("web_accounts");
+      accountIndexesPromise = Promise.all([
+        accounts.createIndex(
+          { normalizedEmail: 1 },
+          { unique: true, name: "web_accounts_normalized_email_unique" }
+        ),
+        accounts.createIndex(
+          { googleId: 1 },
+          {
+            unique: true,
+            partialFilterExpression: { googleId: { $type: "string" } },
+            name: "web_accounts_google_id_unique",
+          }
+        ),
+        accounts.createIndex(
+          { discordId: 1 },
+          {
+            unique: true,
+            partialFilterExpression: { discordId: { $type: "string" } },
+            name: "web_accounts_discord_id_unique",
+          }
+        ),
+      ]).catch((error) => {
+        accountIndexesPromise = null;
+        throw error;
+      });
+    }
+    await accountIndexesPromise;
+  }
+
+  async function findOrCreateGoogleAccount(profile) {
+    await ensureAccountIndexes();
+    const accounts = db.collection("web_accounts");
+    const normalizedEmail = normalizeEmail(profile.email);
+    if (!normalizedEmail) throw httpError(401, "Google returned an invalid email address.");
+    let account = await accounts.findOne({ googleId: String(profile.sub) });
+    if (account) return account;
+
+    account = await accounts.findOne({ normalizedEmail });
+    if (account) throw httpError(409, "An account with this email already exists. Sign in using its original method.");
+
+    try {
+      const result = await accounts.insertOne({
+        normalizedEmail,
+        email: normalizedEmail,
+        googleId: String(profile.sub),
+        createdAt: new Date(),
+      });
+      return accounts.findOne({ _id: result.insertedId });
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      account = await accounts.findOne({
+        $or: [{ googleId: String(profile.sub) }, { normalizedEmail }],
+      });
+      if (account?.googleId === String(profile.sub)) return account;
+      throw httpError(409, "An account with this email already exists.");
+    }
+  }
+
+  async function linkDiscordAccount(accountId, discordId) {
+    if (!ObjectId.isValid(accountId)) {
+      throw httpError(401, "Your website account session is invalid. Please sign in again.");
+    }
+    const accounts = db.collection("web_accounts");
+    await ensureAccountIndexes();
+    const objectId = new ObjectId(accountId);
+    const account = await accounts.findOne({ _id: objectId });
+    if (!account) throw httpError(401, "Your website account no longer exists.");
+    if (typeof account.googleId !== "string") {
+      throw httpError(401, "Sign in with Google before connecting Discord.");
+    }
+
+    const existingLink = await accounts.findOne({ discordId });
+    if (existingLink && String(existingLink._id) !== String(objectId)) {
+      throw httpError(409, "This Discord account is already linked to another website account.");
+    }
+
+    try {
+      const result = await accounts.updateOne(
+        {
+          _id: objectId,
+          $or: [
+            { discordId },
+            { discordId: null },
+            { discordId: { $exists: false } },
+          ],
+        },
+        { $set: { discordId, updatedAt: new Date() } }
+      );
+      if (result.matchedCount !== 1) {
+        throw httpError(409, "A different Discord account is already linked.");
+      }
+      return accounts.findOne({ _id: objectId });
+    } catch (error) {
+      if (error?.code === 11000) {
+        throw httpError(409, "This Discord account is already linked to another website account.");
+      }
+      throw error;
+    }
+  }
+
+  router.get("/auth/google", authRateLimit, asyncRoute(async (req, res) => {
+    if (!googleConfigurationIsValid) {
+      throw httpError(503, "Google sign-in is not configured yet.");
+    }
+
+    const state = crypto.randomBytes(32).toString("hex");
+    const nonce = crypto.randomBytes(32).toString("hex");
+    const { codeVerifier, codeChallenge } = await googleOAuthClient.generateCodeVerifierAsync();
+    req.session.googleOAuthState = state;
+    req.session.googleOAuthNonce = nonce;
+    req.session.googleOAuthCodeVerifier = codeVerifier;
+    await saveSession(req);
+    res.redirect(googleOAuthClient.generateAuthUrl({
+      access_type: "online",
+      prompt: "select_account",
+      scope: ["openid", "email", "profile"],
+      state,
+      nonce,
+      code_challenge: codeChallenge,
+      code_challenge_method: "S256",
+    }));
+  }));
+
+  router.get("/auth/google/callback", authRateLimit, asyncRoute(async (req, res) => {
+    if (!googleConfigurationIsValid) {
+      throw httpError(503, "Google sign-in is not configured yet.");
+    }
+
+    const expectedState = req.session.googleOAuthState;
+    const expectedNonce = req.session.googleOAuthNonce;
+    const codeVerifier = req.session.googleOAuthCodeVerifier;
+    delete req.session.googleOAuthState;
+    delete req.session.googleOAuthNonce;
+    delete req.session.googleOAuthCodeVerifier;
+    if (!matchesOAuthState(expectedState, req.query.state)) {
+      await saveSession(req);
+      throw httpError(400, "Invalid Google OAuth state.");
+    }
+    if (
+      req.query.error ||
+      typeof req.query.code !== "string" ||
+      req.query.code.length === 0 ||
+      req.query.code.length > 2048 ||
+      !expectedNonce ||
+      !codeVerifier
+    ) {
+      await saveSession(req);
+      throw httpError(400, "Google authorization was not completed.");
+    }
+
+    const { tokens } = await googleOAuthClient.getToken({
+      code: req.query.code,
+      codeVerifier,
+    });
+    if (
+      typeof tokens.id_token !== "string" ||
+      tokens.id_token.length === 0 ||
+      tokens.id_token.length > 16_384
+    ) {
+      throw httpError(502, "Google returned an incomplete sign-in response.");
+    }
+    const ticket = await googleOAuthClient.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const profile = ticket.getPayload();
+    if (
+      typeof profile?.sub !== "string" ||
+      profile.sub.length === 0 ||
+      profile.sub.length > 255 ||
+      !profile.email ||
+      profile.email_verified !== true ||
+      profile.nonce !== expectedNonce
+    ) {
+      throw httpError(401, "Google could not verify this account.");
+    }
+
+    let account;
+    try {
+      account = await findOrCreateGoogleAccount(profile);
+    } catch (error) {
+      if (error.status === 409) {
+        return res.redirect("/?auth_error=google_account_conflict");
+      }
+      throw error;
+    }
+    await establishAccountSession(req, account);
+    res.redirect("/");
+  }));
+
   router.get(
     "/auth/discord",
     authRateLimit,
     asyncRoute(async (req, res) => {
+      if (!discordConfigurationIsValid) {
+        throw httpError(503, "Discord sign-in is not configured yet.");
+      }
+      if (!req.session?.googleAuthenticated || !req.session?.account?.id) {
+        throw httpError(401, "Sign in with Google before connecting Discord.");
+      }
       const state = crypto.randomBytes(32).toString("hex");
       req.session.oauthState = state;
+      req.session.oauthLinkAccountId = req.session.account.id;
       await saveSession(req);
 
       const authorizationUrl = new URL(`${DISCORD_API_BASE}/oauth2/authorize`);
@@ -151,23 +402,36 @@ function createDiscordOAuthRouter({ client, db }) {
     "/auth/discord/callback",
     authRateLimit,
     asyncRoute(async (req, res) => {
+      if (!discordConfigurationIsValid) {
+        throw httpError(503, "Discord sign-in is not configured yet.");
+      }
       const expectedState = req.session.oauthState;
       const receivedState = req.query.state;
+      const linkAccountId = req.session.oauthLinkAccountId;
       delete req.session.oauthState;
+      delete req.session.oauthLinkAccountId;
 
-      if (
-        typeof expectedState !== "string" ||
-        typeof receivedState !== "string" ||
-        expectedState.length !== receivedState.length ||
-        !crypto.timingSafeEqual(Buffer.from(expectedState), Buffer.from(receivedState))
-      ) {
+      if (!matchesOAuthState(expectedState, receivedState)) {
         await saveSession(req);
         return res.status(400).json({ error: "Invalid OAuth state." });
       }
 
-      if (req.query.error || typeof req.query.code !== "string") {
+      if (
+        !req.session.googleAuthenticated ||
+        !req.session.account?.id ||
+        linkAccountId !== req.session.account.id
+      ) {
         await saveSession(req);
-        return res.status(400).json({ error: "Discord authorization was not completed." });
+        throw httpError(401, "Sign in with Google before connecting Discord.");
+      }
+
+      if (req.query.error) {
+        await saveSession(req);
+        return res.redirect("/?auth_error=discord_cancelled");
+      }
+      if (typeof req.query.code !== "string" || req.query.code.length === 0 || req.query.code.length > 2048) {
+        await saveSession(req);
+        return res.redirect("/?auth_error=discord_cancelled");
       }
 
       const tokenResponse = await fetch(`${DISCORD_API_BASE}/oauth2/token`, {
@@ -200,12 +464,25 @@ function createDiscordOAuthRouter({ client, db }) {
         !tokenData.access_token ||
         !tokenData.refresh_token ||
         !Number.isFinite(tokenData.expires_in) ||
-        !profile.id
+        !isDiscordSnowflake(String(profile.id || ""))
       ) {
         throw httpError(502, "Discord returned an incomplete OAuth response.");
       }
 
+      let linkedAccount;
+      try {
+        linkedAccount = await linkDiscordAccount(linkAccountId, String(profile.id));
+      } catch (error) {
+        if (error.status === 409) {
+          await saveSession(req);
+          return res.redirect("/?auth_error=discord_account_conflict");
+        }
+        throw error;
+      }
+
       await regenerateSession(req);
+      req.session.googleAuthenticated = true;
+      req.session.account = toPublicAccount(linkedAccount);
       req.session.user = {
         id: String(profile.id),
         username: String(profile.username || ""),
@@ -221,7 +498,7 @@ function createDiscordOAuthRouter({ client, db }) {
     })
   );
 
-  router.post("/auth/logout", authRateLimit, requireSameOrigin, (req, res, next) => {
+  router.post("/auth/logout", requireSameOrigin, (req, res, next) => {
     req.session.destroy((error) => {
       if (error) return next(error);
       res.clearCookie("tactiobot.sid", {
@@ -235,17 +512,28 @@ function createDiscordOAuthRouter({ client, db }) {
 
   router.use("/api", express.json({ limit: "8kb" }));
 
-  router.get("/api/me", requireAuthenticated, (req, res) => {
-    res.json({ user: req.session.user });
+  router.get("/api/me", (req, res) => {
+    const googleAuthenticated =
+      req.session?.googleAuthenticated === true && Boolean(req.session?.account?.id);
+    res.json({
+      user: googleAuthenticated && req.session?.oauth?.accessToken ? req.session.user || null : null,
+      account: googleAuthenticated ? req.session.account : null,
+    });
   });
 
   router.get("/api/languages", (req, res) => {
     res.json({ languages: Object.keys(languages) });
   });
 
+  if (websiteOnly) {
+    router.use("/api", (req, res) => {
+      res.status(404).json({ error: "This API is unavailable in the website-only development server." });
+    });
+  }
+
   router.get(
     "/api/guilds",
-    requireAuthenticated,
+    requireDiscordConnected,
     asyncRoute(async (req, res) => {
       const guilds = await getManageableGuilds(req);
       const result = await Promise.all(
@@ -261,7 +549,7 @@ function createDiscordOAuthRouter({ client, db }) {
 
   router.get(
     "/api/guilds/:guildId/clan-mission-notification",
-    requireAuthenticated,
+    requireDiscordConnected,
     asyncRoute(async (req, res) => {
       await requireManageGuild(req, req.params.guildId);
       const settings = await getGuildConfig(req.params.guildId);
@@ -271,7 +559,7 @@ function createDiscordOAuthRouter({ client, db }) {
 
   router.get(
     "/api/guilds/:guildId/resources",
-    requireAuthenticated,
+    requireDiscordConnected,
     asyncRoute(async (req, res) => {
       const guildId = req.params.guildId;
       await requireManageGuild(req, guildId);
@@ -296,7 +584,7 @@ function createDiscordOAuthRouter({ client, db }) {
 
   router.put(
     "/api/guilds/:guildId/clan-mission-notification",
-    requireAuthenticated,
+    requireDiscordConnected,
     requireSameOrigin,
     writeRateLimit,
     asyncRoute(async (req, res) => {
@@ -334,8 +622,13 @@ function createDiscordOAuthRouter({ client, db }) {
 
       const guild = await getBotGuild(guildId);
       const channels = await guild.channels.fetch();
-      if (!channels.has(channelId) || channels.get(channelId).type !== ChannelType.GuildText) {
+      const channel = channels.get(channelId);
+      if (!channel || channel.type !== ChannelType.GuildText) {
         throw httpError(400, "channelId must identify a text channel in this server.");
+      }
+      const me = guild.members.me || await guild.members.fetchMe();
+      if (!channel.permissionsFor(me)?.has(PermissionsBitField.Flags.SendMessages)) {
+        throw httpError(400, "The bot must have permission to send messages in this channel.");
       }
 
       if (roleId !== null) {
@@ -361,7 +654,7 @@ function createDiscordOAuthRouter({ client, db }) {
 
   router.delete(
     "/api/guilds/:guildId/clan-mission-notification",
-    requireAuthenticated,
+    requireDiscordConnected,
     requireSameOrigin,
     writeRateLimit,
     asyncRoute(async (req, res) => {
@@ -377,9 +670,12 @@ function createDiscordOAuthRouter({ client, db }) {
     if (status >= 500) {
       console.error(`[web-api] Request failed (${error?.name || "Error"}).`);
     }
-    res.status(status).json({
-      error: status >= 500 ? "The request could not be completed." : error.message,
-    });
+    const message = ["entity.parse.failed", "entity.too.large"].includes(error.type)
+      ? "The request body is invalid or too large."
+      : status >= 500 ? "The request could not be completed." : error.message;
+    const payload = { error: message };
+    if (error.code) payload.code = error.code;
+    res.status(status).json(payload);
   });
 
   async function getAccessToken(req) {
@@ -416,7 +712,13 @@ function createDiscordOAuthRouter({ client, db }) {
 
   async function getManageableGuilds(req) {
     const accessToken = await getAccessToken(req);
-    if (!accessToken) throw httpError(401, "Please sign in again.");
+    if (!accessToken) {
+      throw httpError(
+        403,
+        "Discord connection is required for this feature. Connect Discord to continue.",
+        "discord_required"
+      );
+    }
 
     const response = await fetch(`${DISCORD_API_BASE}/users/@me/guilds`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -440,7 +742,7 @@ function createDiscordOAuthRouter({ client, db }) {
   async function getBotGuild(guildId) {
     let guild;
     try {
-      guild = await client.guilds.fetch(guildId);
+      guild = await discordClient.guilds.fetch(guildId);
     } catch (error) {
       if (error?.status === 403 || error?.status === 404 || error?.code === 10004) {
         throw httpError(403, "The bot must be a member of this Discord server.");
@@ -463,15 +765,73 @@ function createDiscordOAuthRouter({ client, db }) {
   return router;
 }
 
-function requireAuthenticated(req, res, next) {
-  if (!req.session?.user) {
-    return res.status(401).json({ error: "Sign in with Discord to continue." });
+function requireDiscordConnected(req, res, next) {
+  if (
+    !req.session?.googleAuthenticated ||
+    !req.session?.account?.id ||
+    !req.session?.user ||
+    !req.session?.oauth?.accessToken
+  ) {
+    return res.status(403).json({
+      error: "Discord connection is required for this feature. Connect Discord to continue.",
+      code: "discord_required",
+    });
   }
   next();
 }
 
+function normalizeEmail(email) {
+  if (typeof email !== "string") return "";
+  const normalizedEmail = email.trim().toLowerCase();
+  if (
+    normalizedEmail.length > 254 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
+  ) {
+    return "";
+  }
+  return normalizedEmail;
+}
+
+function hasConfiguredValue(value) {
+  return typeof value === "string" && value.length > 0 && value.trim() === value;
+}
+
+function toPublicAccount(account) {
+  return {
+    id: String(account._id),
+    email: account.email,
+    displayName: account.displayName || "",
+  };
+}
+
+function establishAccountSession(req, account) {
+  return regenerateSession(req).then(() => {
+    req.session.googleAuthenticated = true;
+    req.session.account = toPublicAccount(account);
+    return saveSession(req);
+  });
+}
+
+function matchesOAuthState(expected, received) {
+  if (typeof expected !== "string" || typeof received !== "string" || expected.length !== received.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(received));
+}
+
 function requireSameOrigin(req, res, next) {
-  if (req.get("origin") !== new URL(process.env.DISCORD_OAUTH_REDIRECT_URI).origin) {
+  const allowedOrigins = new Set([
+    getRedirectOrigin(process.env.DISCORD_OAUTH_REDIRECT_URI, process.env.NODE_ENV === "production"),
+    getRedirectOrigin(process.env.GOOGLE_OAUTH_REDIRECT_URI, process.env.NODE_ENV === "production"),
+  ].filter(Boolean));
+  try {
+    const host = req.get("host");
+    if (!host) throw new Error("Request host is missing.");
+    allowedOrigins.add(new URL(`${req.protocol}://${host}`).origin);
+  } catch {
+    return res.status(403).json({ error: "Cross-origin request rejected." });
+  }
+  if (!allowedOrigins.has(req.get("origin"))) {
     return res.status(403).json({ error: "Cross-origin request rejected." });
   }
   next();

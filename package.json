@@ -3,12 +3,13 @@
   "version": "1.0.0",
   "main": "index.js",
   "engines": {
-    "node": ">=18"
+    "node": ">=20.8.0"
   },
   "scripts": {
     "prestart": "node scripts/verify-discord-install.js",
     "start": "node index.js",
     "start:discord": "node index.js",
+    "dev:web": "node scripts/start-web-dev.js",
     "fetch-font": "node downloadFont.js",
     "register-commands": "node deploy-commands.js",
     "test:db": "node scripts/test-mongodb.js",
@@ -26,6 +27,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^8.7.1",
     "express-session": "^1.19.0",
+    "google-auth-library": "^10.3.0",
     "mongodb": "^6.21.0"
   }
 }

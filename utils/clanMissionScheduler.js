@@ -1,11 +1,16 @@
+const crypto = require("crypto");
 const {
   getAllGuildConfigs,
-  updateGuildNextReset,
+  claimGuildNotification,
+  completeGuildNotification,
+  releaseGuildNotificationClaim,
   getNextReset
 } = require("./clanMissionNotifier");
 const { languages } = require("./cmNotificationLanguages");
 
 let schedulerInterval = null;
+let activeCheck = null;
+const CLAIM_LEASE_MS = 2 * 60 * 1000;
 
 function buildNotificationMessage(config) {
   const roleMention = config.roleId ? `<@&${config.roleId}>` : "";
@@ -19,24 +24,26 @@ async function sendNotification(client, guildId, config) {
     const guild = await client.guilds.fetch(guildId);
     if (!guild) {
       console.warn(`Guild ${guildId} not found for clan mission notification.`);
-      return;
+      return false;
     }
 
     const channel = await guild.channels.fetch(config.channelId);
     if (!channel || !channel.isTextBased()) {
       console.warn(`Channel ${config.channelId} not found or not text-based for guild ${guildId}.`);
-      return;
+      return false;
     }
 
     const message = buildNotificationMessage(config);
     await channel.send(message);
     console.log(`✅ Sent clan mission reset notification to guild ${guildId}, channel ${config.channelId}`);
+    return true;
   } catch (err) {
     console.error(`❌ Failed to send clan mission notification for guild ${guildId}:`, err);
+    return false;
   }
 }
 
-async function checkAndSendNotifications(client) {
+async function runNotificationCheck(client) {
   const configs = await getAllGuildConfigs();
   const now = new Date();
 
@@ -45,11 +52,57 @@ async function checkAndSendNotifications(client) {
 
     const nextReset = new Date(config.nextReset);
     if (now >= nextReset) {
-      await sendNotification(client, config.guildId, config);
-      const next = getNextReset(now).toISOString();
-      await updateGuildNextReset(config.guildId, next);
+      const expectedNextReset = config.nextReset;
+      const claimToken = crypto.randomUUID();
+      const claimTime = new Date();
+      const claimed = await claimGuildNotification(
+        config.guildId,
+        expectedNextReset,
+        claimToken,
+        claimTime,
+        CLAIM_LEASE_MS
+      );
+      if (!claimed) continue;
+
+      try {
+        const delivered = await sendNotification(client, config.guildId, config);
+        if (!delivered) {
+          await releaseGuildNotificationClaim(config.guildId, claimToken);
+          continue;
+        }
+
+        const next = getNextReset(now).toISOString();
+        const completed = await completeGuildNotification(
+          config.guildId,
+          expectedNextReset,
+          claimToken,
+          next
+        );
+        if (!completed) {
+          console.error(`Could not finalize clan mission notification for guild ${config.guildId}; its reset was not advanced.`);
+          await releaseGuildNotificationClaim(config.guildId, claimToken);
+        }
+      } catch (error) {
+        try {
+          await releaseGuildNotificationClaim(config.guildId, claimToken);
+        } catch (releaseError) {
+          console.error(`Could not release clan mission notification claim for guild ${config.guildId} (${releaseError?.name || "Error"}).`);
+        }
+        throw error;
+      }
     }
   }
+}
+
+function checkAndSendNotifications(client) {
+  if (activeCheck) return activeCheck;
+
+  const check = runNotificationCheck(client);
+  const guardedCheck = check.finally(() => {
+    if (activeCheck === guardedCheck) activeCheck = null;
+  });
+  activeCheck = guardedCheck;
+  return guardedCheck;
 }
 
 function startScheduler(client) {

@@ -5,8 +5,9 @@ let mongoClient = null;
 let mongoDatabase = null;
 let connectPromise = null;
 
-async function connectToDatabase() {
-  const uri = process.env.MONGODB_URI;
+async function connectToDatabase(options = {}) {
+  const uri = options.uri || process.env.MONGODB_URI;
+  const databaseName = options.databaseName || DATABASE_NAME;
   if (!uri) {
     throw new Error("MONGODB_URI is not configured.");
   }
@@ -25,12 +26,12 @@ async function connectToDatabase() {
           appName: "TACTIOPBOT",
         });
         await client.connect();
-        const database = client.db(DATABASE_NAME);
+        const database = client.db(databaseName);
         await database.command({ ping: 1 });
 
         mongoClient = client;
         mongoDatabase = database;
-        console.log(`[mongodb] Connected to ${DATABASE_NAME}; ping succeeded.`);
+        console.log(`[mongodb] Connected to ${databaseName}; ping succeeded.`);
         return {
           configured: true,
           connected: true,
