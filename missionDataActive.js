@@ -36,11 +36,13 @@ const missionData = {
     "Rookie": 159,
     "Rick": 157,
     "Lens": 133,
-    "Ferry": 192
+    "Ferry": 171,
+    "Wolf": 353
   },
   "Clean Up": {
     "Miro": 496,
-    "Ferry": 108,
+    "Ferry": 171,
+    "Wolf": 199,
 
     "JB": 496,
     "Snek": 432,
@@ -83,7 +85,8 @@ const missionData = {
   },
   "B.S.S": {
     "Diana": 421,
-    "Ferry": 108,
+    "Ferry": 171,
+    "Wolf": 199,
     "Lens": 246,
     "Moses": 416,
     "David": 350,
@@ -163,10 +166,12 @@ const missionData = {
     "Rick": 157,
     "Mishka": 157,
     "Lens": 135,
-    "Ferry": 108
+    "Ferry": 171,
+    "Wolf": 199
   },
   "Breach": {
-    "Ferry": 192,
+    "Ferry": 303,
+    "Wolf": 199,
     "Dutch": 427,
     "Zloy": 234,
     "Moses": 234,
@@ -208,7 +213,8 @@ const missionData = {
     "Lens": 135
   },
   "Knife": {
-    "Ferry": 108,
+    "Ferry": 171,
+    "Wolf": 199,
     "Charon": 421,
     "Klaus": 367,
     "Dmitry": 364,
@@ -250,7 +256,8 @@ const missionData = {
     "Lens": 135
   },
   "Hammer": {
-    "Ferry": 108,
+    "Ferry": 171,
+    "Wolf": 353,
     "Klaus": 367,
     "Shi": 357,
     "Boris": 357,
@@ -292,7 +299,8 @@ const missionData = {
     "Lens": 135
   },
   "Rare Only": {
-    "Ferry": 108,
+    "Ferry": 171,
+    "Wolf": 199,
     "Syndrome": 407,
     "Varg": 350,
     "David": 350,
@@ -334,7 +342,8 @@ const missionData = {
     "Lens": 133
   },
   "Bayonet": {
-    "Ferry": 108,
+    "Ferry": 171,
+    "Wolf": 199,
     "Chen Li": 438,
     "Travis": 357,
     "Spencer": 346,
@@ -376,7 +385,8 @@ const missionData = {
     "Mishka": 157
   },
   "Logistics": {
-    "Ferry": 108,
+    "Ferry": 303,
+    "Wolf": 199,
     "Miro": 496,
     "Chen Li": 438,
     "Apollon": 416,
@@ -456,7 +466,8 @@ const missionData = {
     "Rookie": 157,
     "Mishka": 155,
     "Lens": 133,
-    "Ferry": 108
+    "Ferry": 171,
+    "Wolf": 353
   },
   "Showdown": {
     "Charon": 496,
@@ -477,7 +488,8 @@ const missionData = {
     "Kirin": 192,
     "Dutch": 185,
     "Varg": 168,
-    "Ferry": 108,
+    "Ferry": 171,
+    "Wolf": 199,
     "David": 162,
     "Joe": 150,
     "Syndrome": 160,
@@ -538,9 +550,12 @@ const missionData = {
     "Rick": 247,
     "Mishka": 243,
     "Lens": 209,
-    "Ferry": 192
+    "Ferry": 270,
+    "Wolf": 300
   },
   "Common Only": {
+    "Ferry": 171,
+    "Wolf": 199,
     "Owen": 318,
     "Rookie": 290,
     "Rick": 290,
@@ -619,7 +634,8 @@ const missionData = {
     "Rick": 157,
     "Mishka": 155,
     "Lens": 133,
-    "Ferry": 108
+    "Ferry": 171,
+    "Wolf": 199
   },
   "Recon": {
     "Snek": 432,
@@ -661,7 +677,8 @@ const missionData = {
     "Rick": 159,
     "Mishka": 157,
     "Lens": 135,
-    "Ferry": 108
+    "Ferry": 171,
+    "Wolf": 199
   }
 };
 

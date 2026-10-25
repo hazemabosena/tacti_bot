@@ -40,6 +40,7 @@ const raw = {
   varg: "varg.png.jpeg",
   victor: "victor.png.jpeg",
   whisper: "whisper.png.jpeg",
+  wolf: "wolf.png.jpeg",
   zloy: "zloy.png.jpeg",
   shi: "shi.png.jpeg"
 };

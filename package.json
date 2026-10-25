@@ -13,7 +13,7 @@
     "fetch-font": "node downloadFont.js",
     "register-commands": "node deploy-commands.js",
     "test:db": "node scripts/test-mongodb.js",
-    "test": "node --test tests/clan-mission.test.js"
+    "test": "node --test tests/clan-mission.test.js tests/seasonal-avatar.test.js"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.11",

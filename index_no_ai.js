@@ -2,10 +2,11 @@
 // NOTE: This file is a clean copy of index.js WITHOUT the AI texting/reply cycle.
 // It is provided to keep the bot functional while missionDataActive fixes are deployed.
 
-const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, ActivityType } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
+const { connectToDatabase, disconnectFromDatabase, getMongoStatus } = require("./db");
 require("dotenv").config();
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
@@ -87,6 +88,17 @@ registerCommands().catch((err) => console.error("registerCommands failed:", err)
 
 client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+  try {
+    client.user.setPresence({
+      activities: [{
+        name: "Tacticool",
+        type: ActivityType.Playing,
+      }],
+      status: "online",
+    });
+  } catch (error) {
+    console.warn("Failed to set bot presence:", error?.message || error);
+  }
 });
 
 if (!DISCORD_TOKEN) {
@@ -132,7 +144,60 @@ client.login(DISCORD_TOKEN);
 // Minimal express server (keeps existing endpoints optional; remove if undesired)
 const app = express();
 const PORT = process.env.PORT || 3000;
+const server = app.listen(PORT, () => console.log(`🌐 running on http://localhost:${PORT}`));
+
 app.use(express.static(path.join(__dirname, "public")));
-app.get("/health", (req, res) => res.status(200).json({ status: "ok", timestamp: new Date().toISOString() }));
-app.listen(PORT, () => console.log(`🌐 running on http://localhost:${PORT}`));
+
+app.get("/health", async (req, res) => {
+  const mongo = getMongoStatus();
+  res.status(200).json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    database: mongo.configured ? (mongo.connected ? "connected" : "disconnected") : "not_configured",
+  });
+});
+
+app.get("/health/db", async (req, res) => {
+  const mongo = getMongoStatus();
+  const statusCode = mongo.connected ? 200 : 503;
+  res.status(statusCode).json({
+    status: mongo.connected ? "ok" : "unavailable",
+    configured: mongo.configured,
+    connected: mongo.connected,
+    database: mongo.database || null,
+  });
+});
+
+(async () => {
+  try {
+    const result = await connectToDatabase();
+    if (result?.configured) {
+      console.log(`[mongodb] ${result.connected ? "Connected to MongoDB Atlas successfully." : "MongoDB configured but connection failed."}`);
+    } else {
+      console.log("[mongodb] MONGODB_URI is not set; MongoDB integration is disabled.");
+    }
+  } catch (error) {
+    console.error("[mongodb] Startup connection check failed.");
+  }
+})();
+
+process.on("SIGINT", async () => {
+  try {
+    await disconnectFromDatabase();
+    server.close(() => process.exit(0));
+  } catch (error) {
+    console.error("[shutdown] error during SIGINT cleanup:", error?.message || error);
+    process.exit(1);
+  }
+});
+
+process.on("SIGTERM", async () => {
+  try {
+    await disconnectFromDatabase();
+    server.close(() => process.exit(0));
+  } catch (error) {
+    console.error("[shutdown] error during SIGTERM cleanup:", error?.message || error);
+    process.exit(1);
+  }
+});
 

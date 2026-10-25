@@ -23,7 +23,7 @@ const missionChoices = [
   { name: "Hammer", value: "Hammer" },
   { name: "HILDR", value: "HILDR" },
   { name: "Knife", value: "Knife" },
-  { name: "Local", value: "Local" },
+  { name: "Locals", value: "Locals" },
   { name: "Logistics", value: "Logistics" },
   { name: "Rare Only", value: "Rare Only" },
   { name: "Recon", value: "Recon" },

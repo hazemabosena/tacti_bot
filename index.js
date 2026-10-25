@@ -4,7 +4,7 @@
 // - existing express endpoints used by the web dashboard
 // - mission operator data fixes live in missionDataActive.js
 
-const { Client, GatewayIntentBits, Collection } = require("discord.js");
+const { Client, GatewayIntentBits, Collection, ActivityType } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
@@ -92,6 +92,17 @@ registerCommands().catch((err) => console.error("registerCommands failed:", err)
 client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   try {
+    client.user.setPresence({
+      activities: [{
+        name: "Tacticool",
+        type: ActivityType.Playing,
+      }],
+      status: "online",
+    });
+  } catch (error) {
+    console.warn("Failed to set bot presence:", error?.message || error);
+  }
+  try {
     loadCommandsFromFs();
     console.log("clientReady: loaded commands:", Array.from(client.commands.keys()));
   } catch (err) {
@@ -103,6 +114,12 @@ client.once("clientReady", async () => {
     startScheduler(client);
   } catch (err) {
     console.error("Failed to start clan mission scheduler:", err?.message || err);
+  }
+  try {
+    const { startSeasonalAvatarScheduler } = require("./utils/seasonalAvatar");
+    startSeasonalAvatarScheduler(client);
+  } catch (err) {
+    console.error("Failed to start seasonal avatar scheduler:", err?.message || err);
   }
 });
 
@@ -190,6 +207,13 @@ function shutdown(signal) {
       require("./utils/clanMissionScheduler").stopScheduler();
     } catch (error) {
       console.error(`[shutdown] Scheduler cleanup failed (${error?.name || "Error"}).`);
+      failed = true;
+    }
+
+    try {
+      require("./utils/seasonalAvatar").stopSeasonalAvatarScheduler();
+    } catch (error) {
+      console.error(`[shutdown] Seasonal avatar scheduler cleanup failed (${error?.name || "Error"}).`);
       failed = true;
     }
 
